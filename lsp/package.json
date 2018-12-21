@@ -25,7 +25,7 @@
     "vscode-languageclient": "^5.2.1"
   },
   "scripts": {
-    "vscode-install": "vscode-install",
+    "postinstall": "vscode-install",
     "build": "tsc -b"
   }
 }
