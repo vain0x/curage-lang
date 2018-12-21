@@ -6,5 +6,15 @@
   "repository": "https://github.com/vain0x/curage-lang",
   "author": "vain0x",
   "license": "MIT",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^10.12.18",
+    "tslint": "^5.12.0",
+    "typescript": "^3.2.2",
+    "vsce": "^1.54.0",
+    "vscode": "^1.1.26"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^5.2.1"
+  }
 }
