@@ -1,0 +1,10 @@
+{
+  "name": "curage-lang",
+  "version": "1.0.0",
+  "description": "Curage-lang supports.",
+  "main": "index.js",
+  "repository": "https://github.com/vain0x/curage-lang",
+  "author": "vain0x",
+  "license": "MIT",
+  "private": true
+}
