@@ -3,8 +3,8 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
- import * as path from 'path'
-import { ExtensionContext } from 'vscode'
+import * as path from 'path'
+import { ExtensionContext, workspace } from 'vscode'
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -24,7 +24,14 @@ export function activate(context: ExtensionContext) {
     args: [serverPath],
   }
 
-  let clientOptions: LanguageClientOptions = {}
+  let clientOptions: LanguageClientOptions = {
+    documentSelector: [
+      { scheme: 'file', language: 'plaintext' },
+    ],
+    synchronize: {
+      fileEvents: workspace.createFileSystemWatcher('**/.clientrc'),
+    },
+  }
 
   // Start language server and client.
   client = new LanguageClient(

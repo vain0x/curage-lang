@@ -1,3 +1,12 @@
+import * as fs from 'fs'
+import {
+  TextDocumentSyncKind,
+  InitializeResult,
+  TextDocumentRegistrationOptions,
+} from 'vscode-languageserver-protocol'
+
+const stdinLog = fs.createWriteStream('~stdin.txt')
+const stdoutLog = fs.createWriteStream('~stdout.txt')
 
 type OnMessage = (message: string) => void
 
@@ -15,7 +24,7 @@ enum InputMode {
  * is just a chunk of messages.
  */
 const stdinHandler = (onMessage: OnMessage) => {
-  let inputs = ""
+  let inputs = ''
   let inputMode = InputMode.Header
   let contentLength = 0
 
@@ -26,7 +35,7 @@ const stdinHandler = (onMessage: OnMessage) => {
     if (inputMode !== InputMode.Header) return
 
     // Reached to the end of headers.
-    if (inputs.startsWith("\r\n")) {
+    if (inputs.startsWith('\r\n')) {
       inputs = inputs.slice(2)
       inputMode = InputMode.Body
       return
@@ -38,7 +47,7 @@ const stdinHandler = (onMessage: OnMessage) => {
     inputs = inputs.slice(m[0].length)
 
     switch (m[1]) {
-      case "Content-Length": {
+      case 'Content-Length': {
         contentLength = +m[2]
         break
       }
@@ -75,7 +84,7 @@ let methodId = 0
  * Submit a LSP message to VSCode.
  */
 const sendLSPMessage = (obj: any) => {
-  const payload = JSON.stringify({ jsonrpc: "2.0", ...obj }, undefined, 2) + "\r\n"
+  const payload = JSON.stringify({ jsonrpc: '2.0', ...obj }, undefined, 2) + '\r\n'
   const contentLength = payload.length
   const message = `Content-Length: ${contentLength}\r\n\r\n${payload}`
 
@@ -83,7 +92,7 @@ const sendLSPMessage = (obj: any) => {
   process.stdout.write(message)
 
   // For debug.
-  console.error("[OUT] " + message)
+  stdoutLog.write(message)
 }
 
 const sendRequest = (id: number, method: string, params: any) => {
@@ -99,22 +108,50 @@ const sendNotify = (method: string, params: any) => {
 }
 
 const onMessage: OnMessage = message => {
-  console.error("[IN] " + message)
+  // For debug.
+  stdinLog.write(message)
+
   const { id, method, params } = JSON.parse(message)
 
   switch (method) {
-    case "initialize": {
+    case 'initialize': {
       sendResponse(id, {
-        capabilities: {},
+        capabilities: {
+          textDocumentSync: {
+            change: TextDocumentSyncKind.Full,
+          },
+        },
+      } as InitializeResult)
+
+      sendRequest(++methodId, "client/registerCapability", {
+        "registrations": [
+          {
+            id: "79eee87c-c409-4664-8102-e03263673f6f",
+            method: "textDocument/didOpen",
+            registerOptions: {
+              documentSelector: [
+                { "language": "plaintext" }
+              ],
+            } as TextDocumentRegistrationOptions,
+          }
+        ]
       })
       break
     }
-    case "initialized": {
+    case 'initialized': {
       // No need to send a response,
       // because `initialized` is a notification but not a request.
       break
     }
-    case "shutdown": {
+    case 'textDocument/didOpen': {
+      console.error(`Open: ${params.textDocument.uri}`)
+      break
+    }
+    case 'textDocument/didChange': {
+      console.error(`Change: ${params.textDocument.uri}`)
+      break
+    }
+    case 'shutdown': {
       process.exit(0)
       break
     }
