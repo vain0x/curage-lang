@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "type": "npm",
             "label": "npm",
-            "script": "build",
+            "command": "yarn",
+            "args": ["build"],
             "problemMatcher": [],
             "group": {
                 "kind": "build",

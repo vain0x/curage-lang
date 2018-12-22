@@ -1,9 +1,13 @@
 import * as fs from 'fs'
 import {
+  Diagnostic,
+  DiagnosticSeverity,
   TextDocumentSyncKind,
   InitializeResult,
   TextDocumentRegistrationOptions,
+  PublishDiagnosticsParams,
 } from 'vscode-languageserver-protocol'
+import { parse } from './curage'
 
 const stdinLog = fs.createWriteStream('~stdin.txt')
 const stdoutLog = fs.createWriteStream('~stdout.txt')
@@ -130,7 +134,7 @@ const onMessage: OnMessage = message => {
             method: "textDocument/didOpen",
             registerOptions: {
               documentSelector: [
-                { "language": "plaintext" }
+                { scheme: "file", language: "plaintext" }
               ],
             } as TextDocumentRegistrationOptions,
           }
@@ -144,11 +148,13 @@ const onMessage: OnMessage = message => {
       break
     }
     case 'textDocument/didOpen': {
-      console.error(`Open: ${params.textDocument.uri}`)
+      const { textDocument: { uri, text } } = params
+      validateDocument(text, uri)
       break
     }
     case 'textDocument/didChange': {
-      console.error(`Change: ${params.textDocument.uri}`)
+      const { textDocument: { uri }, contentChanges: [{ text }] } = params
+      validateDocument(text, uri)
       break
     }
     case 'shutdown': {
@@ -156,6 +162,29 @@ const onMessage: OnMessage = message => {
       break
     }
   }
+}
+
+const validateDocument = (source: string, uri: string) => {
+  const diagnostics: Diagnostic[] = []
+
+  const error = parse(source)
+  if (error) {
+    const { message, line, character } = error
+    diagnostics.push({
+      severity: DiagnosticSeverity.Warning,
+      message,
+      range: {
+        start: { line, character },
+        end: { line, character },
+      },
+      source: "curage-lang",
+    })
+  }
+
+  sendNotify("textDocument/publishDiagnostics", {
+    uri,
+    diagnostics,
+  })
 }
 
 stdinHandler(onMessage)
