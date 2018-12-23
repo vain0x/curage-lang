@@ -1,4 +1,4 @@
-import * as fs from 'fs'
+import * as fs from "fs"
 import {
   Diagnostic,
   DiagnosticSeverity,
@@ -6,11 +6,11 @@ import {
   InitializeResult,
   TextDocumentRegistrationOptions,
   PublishDiagnosticsParams,
-} from 'vscode-languageserver-protocol'
-import { parse } from './curage'
+} from "vscode-languageserver-protocol"
+import { parse } from "./curage"
 
-const stdinLog = fs.createWriteStream('~stdin.txt')
-const stdoutLog = fs.createWriteStream('~stdout.txt')
+const stdinLog = fs.createWriteStream("~stdin.txt")
+const stdoutLog = fs.createWriteStream("~stdout.txt")
 
 type OnMessage = (message: string) => void
 
@@ -28,7 +28,7 @@ enum InputMode {
  * is just a chunk of messages.
  */
 const stdinHandler = (onMessage: OnMessage) => {
-  let inputs = ''
+  let inputs = ""
   let inputMode = InputMode.Header
   let contentLength = 0
 
@@ -39,7 +39,7 @@ const stdinHandler = (onMessage: OnMessage) => {
     if (inputMode !== InputMode.Header) return
 
     // Reached to the end of headers.
-    if (inputs.startsWith('\r\n')) {
+    if (inputs.startsWith("\r\n")) {
       inputs = inputs.slice(2)
       inputMode = InputMode.Body
       return
@@ -51,7 +51,7 @@ const stdinHandler = (onMessage: OnMessage) => {
     inputs = inputs.slice(m[0].length)
 
     switch (m[1]) {
-      case 'Content-Length': {
+      case "Content-Length": {
         contentLength = +m[2]
         break
       }
@@ -74,7 +74,7 @@ const stdinHandler = (onMessage: OnMessage) => {
     onMessage(contents)
   }
 
-  process.stdin.on('data', (data: Buffer) => {
+  process.stdin.on("data", (data: Buffer) => {
     inputs += data.toString()
 
     handleHeaders()
@@ -88,7 +88,7 @@ let methodId = 0
  * Submit a LSP message to VSCode.
  */
 const sendLSPMessage = (obj: any) => {
-  const payload = JSON.stringify({ jsonrpc: '2.0', ...obj }, undefined, 2) + '\r\n'
+  const payload = JSON.stringify({ jsonrpc: "2.0", ...obj }, undefined, 2) + "\r\n"
   const contentLength = payload.length
   const message = `Content-Length: ${contentLength}\r\n\r\n${payload}`
 
@@ -118,7 +118,7 @@ const onMessage: OnMessage = message => {
   const { id, method, params } = JSON.parse(message)
 
   switch (method) {
-    case 'initialize': {
+    case "initialize": {
       sendResponse(id, {
         capabilities: {
           textDocumentSync: {
@@ -128,7 +128,7 @@ const onMessage: OnMessage = message => {
       } as InitializeResult)
 
       sendRequest(++methodId, "client/registerCapability", {
-        "registrations": [
+        registrations: [
           {
             id: "79eee87c-c409-4664-8102-e03263673f6f",
             method: "textDocument/didOpen",
@@ -142,22 +142,22 @@ const onMessage: OnMessage = message => {
       })
       break
     }
-    case 'initialized': {
+    case "initialized": {
       // No need to send a response,
       // because `initialized` is a notification but not a request.
       break
     }
-    case 'textDocument/didOpen': {
+    case "textDocument/didOpen": {
       const { textDocument: { uri, text } } = params
       validateDocument(text, uri)
       break
     }
-    case 'textDocument/didChange': {
+    case "textDocument/didChange": {
       const { textDocument: { uri }, contentChanges: [{ text }] } = params
       validateDocument(text, uri)
       break
     }
-    case 'shutdown': {
+    case "shutdown": {
       process.exit(0)
       break
     }
