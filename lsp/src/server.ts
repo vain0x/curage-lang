@@ -7,7 +7,7 @@ import {
   TextDocumentRegistrationOptions,
   PublishDiagnosticsParams,
 } from "vscode-languageserver-protocol"
-import { parse } from "./curage"
+import { parse, tokenize } from "./curage"
 
 const stdinLog = fs.createWriteStream("~stdin.txt")
 const stdoutLog = fs.createWriteStream("~stdout.txt")
@@ -167,15 +167,16 @@ const onMessage: OnMessage = message => {
 const validateDocument = (source: string, uri: string) => {
   const diagnostics: Diagnostic[] = []
 
-  const error = parse(source)
-  if (error) {
-    const { message, line, character } = error
+  const { issues } = parse(tokenize(source))
+
+  for (const issue of issues) {
+    const { message, y, x } = issue
     diagnostics.push({
       severity: DiagnosticSeverity.Warning,
       message,
       range: {
-        start: { line, character },
-        end: { line, character },
+        start: { line: y, character: x },
+        end: { line: y, character: x },
       },
       source: "curage-lang",
     })

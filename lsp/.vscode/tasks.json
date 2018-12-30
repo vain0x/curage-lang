@@ -3,9 +3,9 @@
     "tasks": [
         {
             "label": "npm",
+            "type": "process",
             "command": "yarn",
             "args": ["build"],
-            "problemMatcher": [],
             "group": {
                 "kind": "build",
                 "isDefault": true
