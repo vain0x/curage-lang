@@ -43,7 +43,7 @@ const testParse = () => {
         print(x);
       `.trimLeft(),
       expected: [
-        { message: "Expected ';'", y: 2, x: 8 },
+        { message: "Expected ';'.", y: 2, x: 8 },
       ],
     }
   ]

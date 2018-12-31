@@ -21,6 +21,13 @@ interface TokenName {
   value: string,
 }
 
+type Keyword =
+  | "let"
+
+interface TokenKeyword {
+  type: Keyword,
+}
+
 type Punctuation =
   | "(" | ")" | "=" | ";"
 
@@ -31,6 +38,7 @@ interface TokenPunctuation {
 type Token =
   | TokenInteger
   | TokenName
+  | TokenKeyword
   | TokenPunctuation
 
 type MaybeToken =
@@ -52,6 +60,10 @@ interface Node {
   tokens?: [Token, Pos][],
   children?: Node[],
 }
+
+const keywords = [
+  "let",
+]
 
 export const tokenize = (source: string) => {
   const tokenRegexp = /( +)|([+-]?[0-9]+)|([a-zA-Z0-9_]+)|([()=;])|(.)/g
@@ -86,7 +98,11 @@ export const tokenize = (source: string) => {
         push({ type: "integer", value: +integer })
       }
       if (name) {
-        push({ type: "name", value: name })
+        if (name === "let") {
+          push({ type: "let" })
+        } else {
+          push({ type: "name", value: name })
+        }
       }
       if (punctuation) {
         push({ type: punctuation as any })
@@ -149,14 +165,17 @@ export const parse = (tokens: [Token, Pos][]) => {
     return tokens[i][1]
   }
 
+  const isEOF = () =>
+    i >= tokens.length
+
   const issue = (message: string) => {
     const { y, x } = nextPos()
     issues.push({ message, y, x })
   }
 
   /**
-   * Skips the next punctuation.
-   * If the next token is not expected, not skipped and reports an issue.
+   * Skips the next punctuation if it's expected.
+   * Otherwise, reports an issue.
    */
   const skipPunctuation = (type: Punctuation) => {
     const t = nextToken()
@@ -168,38 +187,42 @@ export const parse = (tokens: [Token, Pos][]) => {
   }
 
   /**
-   * Skips the next tokens until the specified punctuation is skipped.
-   * Doesn't report more than one issues.
-   * Returns `false` if missing.
+   * Skips until the start of next statement appears,
+   * expecting an immediate `;`.
+   * Doesn't report more than one issue.
    */
-  const skipUntil = (type: Punctuation) => {
+  const skipOverStatement = () => {
     {
       const t = nextToken()
-      if (t.type === type) {
+      if (t.type === ";") {
         i++
-        return true
+        return
       }
     }
 
-    issue(`Expected '${type}'`)
+    issue(`Expected ';'.`)
 
-    while (i < tokens.length) {
+    while (!isEOF()) {
       const t = nextToken()
-      if (t.type === type) {
+      if (t.type === ";") {
         i++
-        return true
+        return
+      }
+      if (t.type === "let") {
+        return
       }
 
+      // The token cannot parse.
       i++
     }
-    return false
+    return
   }
 
   /**
    * Parses the next token if it's an integer literal.
    * Otherwise, does nothing.
    */
-  const parseNumber = () => {
+  const tryParseNumber = () => {
     const t = nextToken()
     if (t.type !== "integer") return
 
@@ -208,7 +231,7 @@ export const parse = (tokens: [Token, Pos][]) => {
     return end()
   }
 
-  const parseName = () => {
+  const tryParseName = () => {
     const t = nextToken()
     if (t.type !== "name") return
 
@@ -219,13 +242,13 @@ export const parse = (tokens: [Token, Pos][]) => {
 
   /**
    * Parses an atomic expression if possible.
-   * Otherwise, reports an error.
+   * Otherwise, creates an error node.
    */
   const parseAtom = () => {
-    const numberNode = parseNumber()
+    const numberNode = tryParseNumber()
     if (numberNode) return numberNode
 
-    const nameNode = parseName()
+    const nameNode = tryParseName()
     if (nameNode) return nameNode
 
     start("error")
@@ -260,43 +283,35 @@ export const parse = (tokens: [Token, Pos][]) => {
     return end()
   }
 
-  const parseLetStatement = () => {
+  const tryParseLetStatement = () => {
     const t = nextToken()
-    if (!(t.type === "name" && t.value === "let")) return
+    if (t.type !== "let") return
 
     start("let-statement")
     i++
-    push(parseName())
+    push(tryParseName())
     skipPunctuation("=")
     push(parseExpression())
-    skipUntil(";")
+    skipOverStatement()
     return end()
   }
 
-
   const parseStatement = () => {
-    const letNode = parseLetStatement()
+    const letNode = tryParseLetStatement()
     if (letNode) return letNode
 
     start("expression-statement")
     push(parseExpression())
-    skipUntil(";")
+    skipOverStatement()
     return end()
-  }
-
-  const parseEof = () => {
-    if (i < tokens.length) {
-      issue("Expected EOF.")
-    }
   }
 
   const parseProgram = () => {
     start("program")
-    while (i < tokens.length) {
+    while (!isEOF()) {
       const node = parseStatement()
       push(node)
     }
-    parseEof()
     return end()
   }
 
