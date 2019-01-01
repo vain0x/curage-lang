@@ -6,8 +6,17 @@ import {
   InitializeResult,
   TextDocumentRegistrationOptions,
   PublishDiagnosticsParams,
+  ReferenceParams,
+  Position,
+  Location,
+  ReferenceContext,
 } from "vscode-languageserver-protocol"
-import { parse, tokenize } from "./curage"
+import {
+  findReferenceLocations,
+  SemanticModel,
+  SyntaxModel,
+  validateSource,
+} from "./curage"
 
 const stdinLog = fs.createWriteStream("~stdin.txt")
 const stdoutLog = fs.createWriteStream("~stdout.txt")
@@ -18,6 +27,14 @@ enum InputMode {
   Header,
   Body,
 }
+
+interface TextDocumentInfo {
+  uri: string,
+  syn: SyntaxModel,
+  sema: SemanticModel,
+}
+
+const documents: Map<string, TextDocumentInfo> = new Map()
 
 /**
  * Reads stdin and call `onMessage`
@@ -121,9 +138,12 @@ const onMessage: OnMessage = message => {
     case "initialize": {
       sendResponse(id, {
         capabilities: {
+          /* Indicate the server wants textDocument/didChange notifications from the client. */
           textDocumentSync: {
             change: TextDocumentSyncKind.Full,
           },
+          /* Indicate the server supports textDocument/references request. */
+          referencesProvider: true,
         },
       } as InitializeResult)
 
@@ -157,6 +177,11 @@ const onMessage: OnMessage = message => {
       validateDocument(text, uri)
       break
     }
+    case "textDocument/references": {
+      const { textDocument: { uri }, position, context } = params as ReferenceParams
+      onTextDocumentReferences(id, uri, position, context)
+      break
+    }
     case "shutdown": {
       process.exit(0)
       break
@@ -165,27 +190,19 @@ const onMessage: OnMessage = message => {
 }
 
 const validateDocument = (source: string, uri: string) => {
-  const diagnostics: Diagnostic[] = []
+  const { diagnostics, ...document } = validateSource(uri, source)
+  documents.set(uri, document)
+  sendNotify("textDocument/publishDiagnostics", { uri, diagnostics })
+}
 
-  const { issues } = parse(tokenize(source))
+const onTextDocumentReferences = (requestId: number, uri: string, position: Position, context: ReferenceContext) => {
+  const document = documents.get(uri)
+  if (!document) return
 
-  for (const issue of issues) {
-    const { message, y, x } = issue
-    diagnostics.push({
-      severity: DiagnosticSeverity.Warning,
-      message,
-      range: {
-        start: { line: y, character: x },
-        end: { line: y, character: x },
-      },
-      source: "curage-lang",
-    })
-  }
+  const { syn, sema } = document
+  const locations = findReferenceLocations(uri, syn, sema, position, context)
 
-  sendNotify("textDocument/publishDiagnostics", {
-    uri,
-    diagnostics,
-  })
+  sendResponse(requestId, locations)
 }
 
 stdinHandler(onMessage)

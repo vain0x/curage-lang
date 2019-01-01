@@ -1,11 +1,13 @@
 import * as assert from "assert"
-import { parse, tokenize } from "./curage"
+import { parse, tokenize, analyze, findTokenAt, findSymbolDef } from "./curage"
+
+const analyzeSource = (source: string) => analyze(parse(tokenize(source)))
 
 const testTokenize = () => {
   const actual = tokenize("let foo = 1;")
   const expected = [
     [
-      { type: "name", value: "let" },
+      { type: "let" },
       { y: 0, x: 0 },
     ],
     [
@@ -54,5 +56,56 @@ const testParse = () => {
   }
 }
 
+const testAnalyze = () => {
+  const table = [
+    {
+      source: "let a = 1; a;",
+      expected: [],
+    },
+    {
+      source: "a; let a = 1; a;",
+      expected: [
+        { message: "Use of undefined variable 'a'.", y: 0, x: 0 },
+      ],
+    }
+  ]
+  for (const { source, expected } of table) {
+    const { issues } = analyzeSource(source)
+    assert.deepStrictEqual(issues, expected)
+  }
+}
+
+const testFindReferences = () => {
+  const table = [
+    {
+      source: "let a = 1; let b = 2; a;",
+      pos: { y: 0, x: 22 },
+      expected: {
+        defs: [{ y: 0, x: 4 }],
+        refs: [{ y: 0, x: 22 }],
+      },
+    },
+    {
+      source: "let a = 1; let a = a; a(a);",
+      pos: { y: 0, x: 15 },
+      expected: {
+        defs: [{ y: 0, x: 15 }],
+        refs: [{ y: 0, x: 22 }, { y: 0, x: 24 }],
+      },
+    },
+  ]
+  for (const { source, pos, expected } of table) {
+    const sema = analyzeSource(source)
+    const token = findTokenAt(sema.syn, pos)
+    const { defs, refs } = findSymbolDef(sema, [token, pos])
+    assert.deepStrictEqual({
+      defs: defs.map(tp => tp[1]),
+      refs: refs.map(tp => tp[1]),
+    }, expected)
+  }
+}
+
 testTokenize()
 testParse()
+testAnalyze()
+testFindReferences()

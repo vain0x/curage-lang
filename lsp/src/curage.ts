@@ -1,5 +1,13 @@
 // curage-lang compiler.
 
+import {
+  Diagnostic,
+  DiagnosticSeverity,
+  Position,
+  Range,
+  ReferenceContext,
+} from "vscode-languageserver-protocol"
+
 interface Pos {
   /** Row number (from 0). */
   y: number,
@@ -7,7 +15,7 @@ interface Pos {
   x: number,
 }
 
-interface Issue extends Pos {
+export interface Issue extends Pos {
   message: string,
 }
 
@@ -61,9 +69,39 @@ interface Node {
   children?: Node[],
 }
 
-const keywords = [
-  "let",
-]
+export interface SyntaxModel {
+  rootNode: Node,
+  issues: Issue[],
+}
+
+export interface SemanticModel {
+  syn: SyntaxModel,
+  symbols: Map<number, SymbolDefinition>,
+  issues: Issue[],
+}
+
+const positionToPos = (position: Position) => ({
+  y: position.line,
+  x: position.character,
+})
+
+const posToPosition = (pos: Pos): Position => ({
+  line: pos.y,
+  character: pos.x,
+})
+
+const posToRange = (pos: Pos): Range => ({
+  start: posToPosition(pos),
+  end: posToPosition(pos),
+})
+
+const comparePos = (l: Pos, r: Pos) => {
+  if (l.y !== r.y) {
+    return Math.sign(l.y - r.y)
+  }
+
+  return Math.sign(l.x - r.x)
+}
 
 export const tokenize = (source: string) => {
   const tokenRegexp = /( +)|([+-]?[0-9]+)|([a-zA-Z0-9_]+)|([()=;])|(.)/g
@@ -117,7 +155,7 @@ export const tokenize = (source: string) => {
   return tokens
 }
 
-export const parse = (tokens: [Token, Pos][]) => {
+export const parse = (tokens: [Token, Pos][]): SyntaxModel => {
   let issues: Issue[] = []
   let stack: {
     type: NodeType,
@@ -316,5 +354,153 @@ export const parse = (tokens: [Token, Pos][]) => {
   }
 
   const node = parseProgram()
-  return { node, issues }
+  return { rootNode: node, issues }
+}
+
+interface SymbolDefinition {
+  symbolId: number,
+  rawName: string,
+  defs: [Token, Pos][],
+  refs: [Token, Pos][],
+}
+
+/**
+ * Performs semantic analysis.
+ */
+export const analyze = (syn: SyntaxModel): SemanticModel => {
+  const symbols = new Map<number, SymbolDefinition>()
+  const env = new Map<string, number>()
+  const issues: Issue[] = []
+
+  let nextSymbolId = 1
+
+  const go = (node: Node) => {
+    switch (node.type) {
+      case "name": {
+        const [t, pos] = node.tokens![0]
+        if (t.type !== "name") throw new Error("bug")
+
+        const symbolId = env.get(t.value)
+        if (!symbolId) {
+          issues.push({
+            message: `Use of undefined variable '${t.value}'.`,
+            ...pos,
+          })
+          return
+        }
+
+        symbols.get(symbolId).refs.push(node.tokens![0])
+        return
+      }
+      case "let-statement": {
+        const [nameNode, initNode] = node.children!
+
+        if (initNode) {
+          go(initNode)
+        }
+
+        if (nameNode) {
+          const [nameToken, namePos] = nameNode.tokens![0]
+          if (nameToken.type !== "name") throw new Error("bug")
+
+          const symbolId = nextSymbolId++
+          symbols.set(symbolId, {
+            rawName: nameToken.value,
+            symbolId,
+            defs: [[nameToken, namePos]],
+            refs: [],
+          })
+
+          env.set(nameToken.value, symbolId)
+        }
+        return
+      }
+      default:
+        for (const child of node.children || []) {
+          go(child)
+        }
+        return
+    }
+  }
+
+  go(syn.rootNode)
+
+  return { syn, symbols, issues }
+}
+
+export const findTokenAt = (syn: SyntaxModel, pos: Pos) => {
+  let last: Token | undefined
+
+  for (const [t, p] of syn.rootNode.tokens!) {
+    if (comparePos(p, pos) > 0) {
+      break
+    }
+    last = t
+  }
+
+  return last
+}
+
+export const findSymbolDef = (sema: SemanticModel, tp: [Token, Pos]) => {
+  const [token,] = tp
+
+  for (const symbolDef of sema.symbols.values()) {
+    for (const [t,] of [...symbolDef.defs, ...symbolDef.refs]) {
+      if (t === token) {
+        return symbolDef
+      }
+    }
+  }
+
+  return undefined
+}
+
+const issuesToDiagnostics = ({ issues }: { issues: Issue[] }) => {
+  const diagnostics: Diagnostic[] = []
+
+  for (const issue of issues) {
+    const { message, y, x } = issue
+    diagnostics.push({
+      severity: DiagnosticSeverity.Warning,
+      message,
+      range: {
+        start: { line: y, character: x },
+        end: { line: y, character: x },
+      },
+      source: "curage-lang",
+    })
+  }
+
+  return diagnostics
+}
+
+const possToLocations = (uri: string, poss: Pos[]) => {
+  return poss.map(pos => ({ uri, range: posToRange(pos) }))
+}
+
+export const validateSource = (uri: string, source: string) => {
+  const tokens = tokenize(source)
+  const syn = parse(tokens)
+  const sema = analyze(syn)
+
+  const diagnostics = [
+    ...issuesToDiagnostics(syn),
+    ...issuesToDiagnostics(sema),
+  ]
+  return { uri, syn, sema, diagnostics }
+}
+
+export const findReferenceLocations = (uri: string, syn: SyntaxModel, sema: SemanticModel, position: Position, context: ReferenceContext) => {
+  const pos = positionToPos(position)
+  const token = findTokenAt(syn, pos)
+  if (!token) return []
+
+  const symbolDef = findSymbolDef(sema, [token, pos])
+  if (!symbolDef) return []
+
+  const tokens = [
+    ...symbolDef.refs,
+    ...(context.includeDeclaration ? symbolDef.defs : []),
+  ]
+  return possToLocations(uri, tokens.map(tp => tp[1]))
 }
