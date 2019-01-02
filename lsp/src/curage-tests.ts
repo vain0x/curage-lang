@@ -1,38 +1,23 @@
 import * as assert from "assert"
-import { parse, tokenize, analyze, findTokenAt, findSymbolDef } from "./curage"
+import {
+  analyze,
+  findSymbolDef,
+  findTokenAt,
+  parse,
+  testPos,
+  tokenize,
+} from "./curage"
 
+const parseStr = (source: string) => parse(tokenize(source))
 const analyzeSource = (source: string) => analyze(parse(tokenize(source)))
 
 const testTokenize = () => {
-  const actual = tokenize("let foo = 1;")
-  const expected = [
-    [
-      { type: "let" },
-      { y: 0, x: 0 },
-    ],
-    [
-      { type: "name", value: "foo" },
-      { y: 0, x: 4 },
-    ],
-    [
-      { type: "=" },
-      { y: 0, x: 8 },
-    ],
-    [
-      { type: "integer", value: 1 },
-      { y: 0, x: 10 },
-    ],
-    [
-      { type: ";" },
-      { y: 0, x: 11 },
-    ],
-  ]
+  const actual = tokenize("let foo = 1;").map(x => x.value)
+  const expected = ["let", "foo", "=", "1", ";", ""]
   assert.deepStrictEqual(actual, expected)
 }
 
 const testParse = () => {
-  const parseStr = (source: string) => parse(tokenize(source))
-
   const table = [
     {
       actual: "1;",
@@ -80,31 +65,23 @@ const testFindReferences = () => {
     {
       source: "let a = 1; let b = 2; a;",
       pos: { y: 0, x: 22 },
-      expected: {
-        defs: [{ y: 0, x: 4 }],
-        refs: [{ y: 0, x: 22 }],
-      },
+      expected: 1,
     },
     {
       source: "let a = 1; let a = a; a(a);",
       pos: { y: 0, x: 15 },
-      expected: {
-        defs: [{ y: 0, x: 15 }],
-        refs: [{ y: 0, x: 22 }, { y: 0, x: 24 }],
-      },
+      expected: 2,
     },
   ]
   for (const { source, pos, expected } of table) {
     const sema = analyzeSource(source)
     const token = findTokenAt(sema.syn, pos)
-    const { defs, refs } = findSymbolDef(sema, [token, pos])
-    assert.deepStrictEqual({
-      defs: defs.map(tp => tp[1]),
-      refs: refs.map(tp => tp[1]),
-    }, expected)
+    const { refs } = findSymbolDef(sema, token)
+    assert.deepStrictEqual(refs.length, expected)
   }
 }
 
+testPos()
 testTokenize()
 testParse()
 testAnalyze()
