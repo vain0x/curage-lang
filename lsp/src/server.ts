@@ -1,4 +1,5 @@
 import * as fs from "fs"
+import * as assert from "assert"
 import {
   Diagnostic,
   DiagnosticSeverity,
@@ -24,12 +25,14 @@ import {
 const stdinLog = fs.createWriteStream("~stdin.txt")
 const stdoutLog = fs.createWriteStream("~stdout.txt")
 
-type OnMessage = (message: string) => void
-
-enum InputMode {
-  Header,
-  Body,
+interface AbstractMessage {
+  jsonrpc: string,
+  id: number,
+  method: string,
+  params: any,
 }
+
+type OnMessage = (message: AbstractMessage) => void
 
 interface TextDocumentInfo {
   uri: string,
@@ -38,6 +41,83 @@ interface TextDocumentInfo {
 }
 
 const documents: Map<string, TextDocumentInfo> = new Map()
+
+const tryParseLSPMessage = (source: string) => {
+  const HEADER_LINE_LIMIT = 10
+
+  let i = 0
+  let contentLength: number | undefined
+  let hasBody = false
+
+  const lines = source.split("\r\n", HEADER_LINE_LIMIT)
+  for (const line of lines) {
+    i += line.length + 2
+
+    if (line === "") {
+      hasBody = true
+      break
+    }
+
+    const [key, value] = line.split(":", 2)
+    if (key === "Content-Length") {
+      contentLength = +value.trim()
+      continue
+    }
+
+    // Not supported.
+  }
+
+  if (!hasBody) return
+
+  if (contentLength === undefined) {
+    // FIXME: Send error in JSONRPC protocol.
+    throw new Error("Content-Length is required.")
+  }
+
+  if (source.length < i + contentLength) {
+    return
+  }
+
+  const body = source.slice(i, i + contentLength)
+  const rest = source.slice(i + contentLength)
+
+  let message: any
+  try {
+    message = JSON.parse(body)
+  } catch (_err) {
+    // FIXME: Send error in JSONRPC protocol.
+    throw new Error("Invalid JSON.")
+  }
+
+  return { message, rest }
+}
+
+const testTryParseLSPMessage = () => {
+  const table = [
+    {
+      source: `Content-Length: 56\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{"jsonrpc":2.0,"id":1,"method":"shutdown","params":null}`,
+      expected: {
+        message: {
+          jsonrpc: 2,
+          id: 1,
+          method: "shutdown",
+          params: null,
+        },
+        rest: "",
+      },
+    },
+    {
+      source: `Content-Length: 21\r\n`,
+      expected: undefined,
+    },
+  ]
+  for (const { source, expected } of table) {
+    const actual = tryParseLSPMessage(source)
+    assert.deepStrictEqual(actual, expected)
+  }
+}
+
+testTryParseLSPMessage()
 
 /**
  * Reads stdin and call `onMessage`
@@ -49,56 +129,25 @@ const documents: Map<string, TextDocumentInfo> = new Map()
  */
 const stdinHandler = (onMessage: OnMessage) => {
   let inputs = ""
-  let inputMode = InputMode.Header
-  let contentLength = 0
 
-  const headerReg = /^([a-zA-Z0-9-]+): *([^\r\n]*)\r\n/
+  const parseAsPossible = () => {
+    const result = tryParseLSPMessage(inputs)
+    if (result === undefined) return
 
-  const handleHeaders = () => {
-    if (inputs.length === 0) return
-    if (inputMode !== InputMode.Header) return
+    const { message, rest } = result
+    inputs = rest
 
-    // Reached to the end of headers.
-    if (inputs.startsWith("\r\n")) {
-      inputs = inputs.slice(2)
-      inputMode = InputMode.Body
-      return
-    }
-
-    const m = headerReg.exec(inputs)
-    if (!m) return
-
-    inputs = inputs.slice(m[0].length)
-
-    switch (m[1]) {
-      case "Content-Length": {
-        contentLength = +m[2]
-        break
-      }
-      default:
-        // not supported
-        break
-    }
-
-    handleHeaders()
-  }
-
-  const handleBody = () => {
-    if (inputMode !== InputMode.Body) return
-    if (inputs.length < contentLength) return
-
-    const contents = inputs.slice(0, contentLength)
-    inputs = inputs.slice(contentLength)
-    inputMode = InputMode.Header
-
-    onMessage(contents)
+    onMessage(message)
   }
 
   process.stdin.on("data", (data: Buffer) => {
-    inputs += data.toString()
+    const chunk = data.toString()
+    inputs += chunk
 
-    handleHeaders()
-    handleBody()
+    // For debug.
+    stdinLog.write(chunk)
+
+    parseAsPossible()
   })
 }
 
@@ -132,10 +181,7 @@ const sendNotify = (method: string, params: any) => {
 }
 
 const onMessage: OnMessage = message => {
-  // For debug.
-  stdinLog.write(message)
-
-  const { id, method, params } = JSON.parse(message)
+  const { id, method, params } = message
 
   switch (method) {
     case "initialize": {
