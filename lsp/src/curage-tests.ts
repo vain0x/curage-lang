@@ -6,6 +6,7 @@ import {
   parse,
   testPos,
   tokenize,
+  evaluateRename,
 } from "./curage"
 
 const parseStr = (source: string) => parse(tokenize(source))
@@ -30,7 +31,10 @@ const testParse = () => {
         print(x);
       `.trimLeft(),
       expected: [
-        { message: "Expected ';'.", y: 2, x: 8 },
+        {
+          message: "Expected ';'.",
+          range: [{ y: 2, x: 8 }, { y: 2, x: 13 }],
+        },
       ],
     }
   ]
@@ -50,7 +54,10 @@ const testAnalyze = () => {
     {
       source: "a; let a = 1; a;",
       expected: [
-        { message: "Use of undefined variable 'a'.", y: 0, x: 0 },
+        {
+          message: "Use of undefined variable 'a'.",
+          range: [{ y: 0, x: 0 }, { y: 0, x: 1 }],
+        },
       ],
     }
   ]
@@ -81,8 +88,42 @@ const testFindReferences = () => {
   }
 }
 
+const testEvaluateRename = () => {
+  const sema = analyzeSource("let a = 1;\nlet a = a;\na(a);")
+  const edits = evaluateRename({ line: 2, character: 0 }, "b", sema)
+  const expected = [
+    {
+      range:
+      {
+        start: { line: 1, character: 4 },
+        end: { line: 1, character: 5 }
+      },
+      newText: 'b'
+    },
+    {
+      range:
+      {
+        start: { line: 2, character: 0 },
+        end: { line: 2, character: 1 }
+      },
+      newText: 'b'
+    },
+    {
+      range:
+      {
+        start: { line: 2, character: 2 },
+        end: { line: 2, character: 3 }
+      },
+      newText: 'b'
+    }
+  ]
+
+  assert.deepStrictEqual(edits, expected)
+}
+
 testPos()
 testTokenize()
 testParse()
 testAnalyze()
 testFindReferences()
+testEvaluateRename()

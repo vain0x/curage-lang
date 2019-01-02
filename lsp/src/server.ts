@@ -10,12 +10,15 @@ import {
   Position,
   Location,
   ReferenceContext,
+  RenameParams,
+  WorkspaceEdit,
 } from "vscode-languageserver-protocol"
 import {
   findReferenceLocations,
   SemanticModel,
   SyntaxModel,
   validateSource,
+  evaluateRename,
 } from "./curage"
 
 const stdinLog = fs.createWriteStream("~stdin.txt")
@@ -138,12 +141,13 @@ const onMessage: OnMessage = message => {
     case "initialize": {
       sendResponse(id, {
         capabilities: {
-          /* Indicate the server wants textDocument/didChange notifications from the client. */
+          // Indicate the server wants textDocument/didChange notifications from the client.
           textDocumentSync: {
             change: TextDocumentSyncKind.Full,
           },
-          /* Indicate the server supports textDocument/references request. */
+          // Indicate the server supports textDocument/references request.
           referencesProvider: true,
+          renameProvider: true,
         },
       } as InitializeResult)
 
@@ -182,6 +186,11 @@ const onMessage: OnMessage = message => {
       onTextDocumentReferences(id, uri, position, context)
       break
     }
+    case "textDocument/rename": {
+      const { textDocument: { uri }, position, newName } = params as RenameParams
+      onTextDocumentRename(id, uri, position, newName)
+      break
+    }
     case "shutdown": {
       process.exit(0)
       break
@@ -203,6 +212,19 @@ const onTextDocumentReferences = (requestId: number, uri: string, position: Posi
   const locations = findReferenceLocations(uri, syn, sema, position, context)
 
   sendResponse(requestId, locations)
+}
+
+const onTextDocumentRename = (requestId: number, uri: string, position: Position, newName: string) => {
+  const next = (workspaceEdit?: WorkspaceEdit) => {
+    sendResponse(requestId, workspaceEdit || null)
+  }
+
+  const document = documents.get(uri)
+  if (!document) return next()
+
+  const { sema } = document
+  const edits = evaluateRename(position, newName, sema)
+  next({ changes: { [uri]: edits } })
 }
 
 stdinHandler(onMessage)

@@ -7,6 +7,8 @@ import {
   Position,
   Range,
   ReferenceContext,
+  WorkspaceEdit,
+  TextEdit,
 } from "vscode-languageserver-protocol"
 
 interface Pos {
@@ -318,7 +320,8 @@ export const parse = (tokens: Token[]): SyntaxModel => {
       token,
       children: [],
       span,
-    })
+      [NODE_START_POS]: { y: state.y, x: state.x },
+    } as Node)
 
     const p = appendPos(state, span)
     state.y = p.y
@@ -425,6 +428,8 @@ export const parse = (tokens: Token[]): SyntaxModel => {
   }
 
   const parseCallExpression = () => {
+    const startPos = { ...state }
+
     let callee = parseAtom()
 
     const leftParen = nextToken()
@@ -432,7 +437,7 @@ export const parse = (tokens: Token[]): SyntaxModel => {
       return callee
     }
 
-    start("call-expression")
+    start("call-expression", startPos)
     push(callee)
     skipPunctuation("(")
     push(parseExpression())
@@ -676,4 +681,31 @@ export const findReferenceLocations = (uri: string, syn: SyntaxModel, sema: Sema
     ...(context.includeDeclaration ? symbolDef.defs : []),
   ]
   return possToLocations(uri, tokens.map(tp => tp[1]))
+}
+
+export const evaluateRename = (position: Position, newName: string, sema: SemanticModel) => {
+  const pos = positionToPos(position)
+  const token = findTokenAt(sema.syn, pos)
+  if (!token) return []
+
+  const symbolDef = findSymbolDef(sema, token)
+  if (!symbolDef) return []
+
+  const tokens = [
+    ...symbolDef.defs,
+    ...symbolDef.refs,
+  ]
+
+  const edits: TextEdit[] =
+    tokens.map(token => {
+      const startPos = token[NODE_START_POS]
+      const endPos = appendPos(startPos, token.span)
+      const range = {
+        start: posToPosition(appendPos(startPos, nodeOffset(token))),
+        end: posToPosition(endPos),
+      }
+      return { range, newText: newName }
+    })
+
+  return edits
 }
