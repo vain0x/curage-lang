@@ -189,6 +189,7 @@ const onMessage: OnMessage = message => {
         capabilities: {
           // Indicate the server wants textDocument/didChange notifications from the client.
           textDocumentSync: {
+            openClose: true,
             change: TextDocumentSyncKind.Full,
           },
           // Indicate the server supports textDocument/references request.
@@ -196,20 +197,6 @@ const onMessage: OnMessage = message => {
           renameProvider: true,
         },
       } as InitializeResult)
-
-      sendRequest(++methodId, "client/registerCapability", {
-        registrations: [
-          {
-            id: "79eee87c-c409-4664-8102-e03263673f6f",
-            method: "textDocument/didOpen",
-            registerOptions: {
-              documentSelector: [
-                { scheme: "file", language: "plaintext" }
-              ],
-            } as TextDocumentRegistrationOptions,
-          }
-        ]
-      })
       break
     }
     case "initialized": {
