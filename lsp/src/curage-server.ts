@@ -33,11 +33,11 @@ export const onMessage = (message: Message) => {
           textDocumentSync: {
             // Indicate the server want the client to send
             // `textDocument/didOpen` and `textDocument/didClose` notifications
-            // whenever a document opens or get closed.
+            // whenever a document opened or closed.
             openClose: true,
             // Indicate the server want the client to send
             // `textDocument/didChange` notifications
-            // whenever an open document is modified,
+            // whenever an open document modified,
             // including the full text of the modified document.
             change: TextDocumentSyncKind.Full,
           },
