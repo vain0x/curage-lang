@@ -225,6 +225,10 @@ const onMessage: OnMessage = message => {
       break
     }
     case "shutdown": {
+      sendResponse(id, null)
+      break
+    }
+    case "exit": {
       process.exit(0)
       break
     }
