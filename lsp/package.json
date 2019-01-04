@@ -26,6 +26,7 @@
   },
   "scripts": {
     "postinstall": "vscode-install",
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "watch": "tsc -w"
   }
 }
