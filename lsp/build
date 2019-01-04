@@ -1,4 +1,0 @@
-#!/bin/bash
-
-yarn run vscode-install
-yarn run tsc -b
