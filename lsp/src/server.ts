@@ -1,29 +1,7 @@
-import * as fs from "fs"
 import * as assert from "assert"
 import {
-  Diagnostic,
-  DiagnosticSeverity,
-  TextDocumentSyncKind,
   InitializeResult,
-  TextDocumentRegistrationOptions,
-  PublishDiagnosticsParams,
-  ReferenceParams,
-  Position,
-  Location,
-  ReferenceContext,
-  RenameParams,
-  WorkspaceEdit,
 } from "vscode-languageserver-protocol"
-import {
-  findReferenceLocations,
-  SemanticModel,
-  SyntaxModel,
-  validateSource,
-  evaluateRename,
-} from "./curage"
-
-const stdinLog = fs.createWriteStream("~stdin.txt")
-const stdoutLog = fs.createWriteStream("~stdout.txt")
 
 interface AbstractMessage {
   jsonrpc: string,
@@ -33,14 +11,6 @@ interface AbstractMessage {
 }
 
 type OnMessage = (message: AbstractMessage) => void
-
-interface TextDocumentInfo {
-  uri: string,
-  syn: SyntaxModel,
-  sema: SemanticModel,
-}
-
-const documents: Map<string, TextDocumentInfo> = new Map()
 
 const tryParseLSPMessage = (source: string) => {
   const HEADER_LINE_LIMIT = 10
@@ -144,14 +114,9 @@ const stdinHandler = (onMessage: OnMessage) => {
     const chunk = data.toString()
     inputs += chunk
 
-    // For debug.
-    stdinLog.write(chunk)
-
     parseAsPossible()
   })
 }
-
-let methodId = 0
 
 /**
  * Submit a LSP message to VSCode.
@@ -163,9 +128,6 @@ const sendLSPMessage = (obj: any) => {
 
   // Send to VSCode.
   process.stdout.write(message)
-
-  // For debug.
-  stdoutLog.write(message)
 }
 
 const sendRequest = (id: number, method: string, params: any) => {
@@ -186,42 +148,13 @@ const onMessage: OnMessage = message => {
   switch (method) {
     case "initialize": {
       sendResponse(id, {
-        capabilities: {
-          // Indicate the server wants textDocument/didChange notifications from the client.
-          textDocumentSync: {
-            openClose: true,
-            change: TextDocumentSyncKind.Full,
-          },
-          // Indicate the server supports textDocument/references request.
-          referencesProvider: true,
-          renameProvider: true,
-        },
+        capabilities: {},
       } as InitializeResult)
       break
     }
     case "initialized": {
       // No need to send a response,
       // because `initialized` is a notification but not a request.
-      break
-    }
-    case "textDocument/didOpen": {
-      const { textDocument: { uri, text } } = params
-      validateDocument(text, uri)
-      break
-    }
-    case "textDocument/didChange": {
-      const { textDocument: { uri }, contentChanges: [{ text }] } = params
-      validateDocument(text, uri)
-      break
-    }
-    case "textDocument/references": {
-      const { textDocument: { uri }, position, context } = params as ReferenceParams
-      onTextDocumentReferences(id, uri, position, context)
-      break
-    }
-    case "textDocument/rename": {
-      const { textDocument: { uri }, position, newName } = params as RenameParams
-      onTextDocumentRename(id, uri, position, newName)
       break
     }
     case "shutdown": {
@@ -233,35 +166,6 @@ const onMessage: OnMessage = message => {
       break
     }
   }
-}
-
-const validateDocument = (source: string, uri: string) => {
-  const { diagnostics, ...document } = validateSource(uri, source)
-  documents.set(uri, document)
-  sendNotify("textDocument/publishDiagnostics", { uri, diagnostics })
-}
-
-const onTextDocumentReferences = (requestId: number, uri: string, position: Position, context: ReferenceContext) => {
-  const document = documents.get(uri)
-  if (!document) return
-
-  const { syn, sema } = document
-  const locations = findReferenceLocations(uri, syn, sema, position, context)
-
-  sendResponse(requestId, locations)
-}
-
-const onTextDocumentRename = (requestId: number, uri: string, position: Position, newName: string) => {
-  const next = (workspaceEdit?: WorkspaceEdit) => {
-    sendResponse(requestId, workspaceEdit || null)
-  }
-
-  const document = documents.get(uri)
-  if (!document) return next()
-
-  const { sema } = document
-  const edits = evaluateRename(position, newName, sema)
-  next({ changes: { [uri]: edits } })
 }
 
 stdinHandler(onMessage)
