@@ -1,5 +1,6 @@
 // Curage-lang LSP server implementation.
 
+import * as assert from "assert"
 import {
   InitializeResult,
   TextDocumentSyncKind,
@@ -8,6 +9,8 @@ import {
   PublishDiagnosticsParams,
   DiagnosticSeverity,
   Diagnostic,
+  Position,
+  Range,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -75,28 +78,285 @@ export const onMessage = (message: Message) => {
   }
 }
 
+type TokenType =
+  | "int"
+  | "name"
+  | "let"
+  | "be"
+  // end-of-line
+  | "eol"
+  // end-of-file
+  | "eof"
+  | "invalid"
+
+interface TokenBase {
+  type: TokenType,
+  value: string,
+}
+
+/**
+ * Minimum unit of string in the source code.
+ * A word, integer, punctuation, etc.
+ */
+interface Token extends TokenBase {
+  range: Range,
+}
+
+/**
+ * Converts a position to an array `[line, character]`.
+ */
+const positionToArray = (position: Position) => {
+  return [position.line, position.character]
+}
+
+/**
+ * Converts a range to a nested array
+ * `[[start.line, start.character], [end.line, end.character]]`.
+ */
+const rangeToMatrix = (range: Range) => {
+  return [positionToArray(range.start), positionToArray(range.end)]
+}
+
+/**
+ * Split a source code into a list of tokens.
+ *
+ * - The result ends with a token with type `eof` to preserve the trailing blank.
+ * - Spaces and end-of-lines don't become tokens.
+ */
+export const tokenize = (source: string): Token[] => {
+  const tokenRegexp = /( +)|([+-]?[0-9]+)|([a-zA-Z0-9_]+)|(.)/g
+
+  const tokens: Token[] = []
+
+  // Current position.
+  let line = 0
+  let character = 0
+
+  /** Add a token to the list. */
+  const push = (token: TokenBase) => {
+    // Calculate the range of the token.
+    const range = {
+      start: { line, character },
+      end: { line, character: character + token.value.length },
+    }
+
+    tokens.push({ ...token, range })
+  }
+
+  const lines = source.split(/\r\n|\n/)
+  for (line = 0; line < lines.length; line++) {
+    // Skip blank line.
+    if (lines[line].trim() === "") continue
+
+    while (true) {
+      const match = tokenRegexp.exec(lines[line])
+      if (!match) break
+
+      character = match.index
+
+      // All of elements are undefined except for the matched alternative.
+      const [
+        _match,
+        space,
+        int,
+        name,
+        invalid,
+      ] = match
+
+      if (space) {
+        continue
+      }
+      if (int) {
+        push({ type: "int", value: int })
+        continue
+      }
+      if (name === "let" || name === "be") {
+        push({ type: name, value: name })
+        continue
+      }
+      if (name) {
+        push({ type: "name", value: name })
+        continue
+      }
+      if (invalid) {
+        push({ type: "invalid", value: invalid })
+        continue
+      }
+
+      throw new Error("NEVER")
+    }
+
+    character = lines[line].length
+    push({ type: "eol", value: "" })
+  }
+
+  return tokens
+}
+
+export const testTokenize = () => {
+  const table = [
+    {
+      source: "let x be 1",
+      expected: [
+        ["let", "let", [[0, 0], [0, 3]]],
+        ["name", "x", [[0, 4], [0, 5]]],
+        ["be", "be", [[0, 6], [0, 8]]],
+        ["int", "1", [[0, 9], [0, 10]]],
+        ["eol", "", [[0, 10], [0, 10]]],
+      ],
+    },
+  ]
+
+  for (const { source, expected } of table) {
+    const tokens = tokenize(source)
+    const values = tokens.map(t => (
+      [t.type, t.value, rangeToMatrix(t.range)]
+    ))
+    assert.deepStrictEqual(values, expected)
+  }
+}
+
+/**
+ * Parse tokens to make diagnostics.
+ */
+const parseTokens = (tokens: Token[]) => {
+  const diagnostics: Diagnostic[] = []
+
+  if (tokens.length === 0) {
+    return { diagnostics }
+  }
+
+  // Current token index.
+  let i = 0
+
+  /**
+   * Skip over the current line.
+   * Return the skipped range.
+   */
+  const skipLine = (): { range: Range } => {
+    if (i >= tokens.length) {
+      return { range: tokens[tokens.length - 1].range }
+    }
+
+    let j = i + 1
+    while (j < tokens.length && tokens[j - 1].type !== "eol") {
+      j++
+    }
+    assert.ok(i < j && j >= tokens.length || tokens[j - 1].type === "eol")
+
+    const range = {
+      start: tokens[i].range.start,
+      end: tokens[j - 1].range.end,
+    }
+
+    i = j
+    return { range }
+  }
+
+  /**
+   * Skip over the current line and report a warning on it.
+   */
+  const warn = (message: string) => {
+    const { range } = skipLine()
+    diagnostics.push({
+      severity: DiagnosticSeverity.Warning,
+      message,
+      range,
+    })
+  }
+
+  const isAtomicExpression = (token: Token) => {
+    return token.type === "int" || token.type === "name"
+  }
+
+  /**
+   * Try to parse tokens as an expression.
+   * For now, expression is just an integer or name.
+   */
+  const tryParseExpression = (): boolean => {
+    if (!isAtomicExpression(tokens[i])) {
+      return false
+    }
+
+    i++
+    return true
+  }
+
+  const parseLetStatement = (): void => {
+    if (tokens[i].type !== "let") {
+      return warn("Expected 'let'.")
+    }
+    i++
+
+    if (tokens[i].type !== "name") {
+      return warn("Expected a name.")
+    }
+    i++
+
+    if (tokens[i].type !== "be") {
+      return warn("Expected 'be'.")
+
+    }
+    i++
+
+    if (!tryParseExpression()) {
+      return warn("Expected an expression.")
+    }
+
+    if (tokens[i].type !== "eol") {
+      return warn("Expected an end of line.")
+    }
+    i++
+  }
+
+  while (i < tokens.length) {
+    parseLetStatement()
+  }
+
+  return { diagnostics }
+}
+
+const parseSource = (source: string) => {
+  return parseTokens(tokenize(source))
+}
+
+export const testParseTokens = () => {
+  const table = [
+    {
+      source: "let x be 1\nlet y be x",
+      expected: [],
+    },
+    {
+      source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
+      expected: [
+        ["Expected a name.", [[0, 4], [0, 4]]],
+        ["Expected 'let'.", [[2, 0], [2, 4]]],
+        ["Expected an expression.", [[3, 9], [3, 9]]],
+        ["Expected a name.", [[4, 4], [4, 10]]],
+      ],
+    },
+    {
+      source: "let x = 1;",
+      expected: [
+        ["Expected 'be'.", [[0, 6], [0, 10]]],
+      ],
+    },
+  ]
+
+  for (const { source, expected } of table) {
+    const { diagnostics } = parseSource(source)
+    const actual = diagnostics.map(d => (
+      [d.message, rangeToMatrix(d.range)]
+    ))
+    assert.deepStrictEqual(actual, expected)
+  }
+}
+
 /**
  * Validates a document to publish diagnostics (warnings).
  */
 const validateDocument = (uri: string, text: string) => {
-  const expected = `print "hello, world!"`
-
-  const diagnostics: Diagnostic[] = []
-
-  // If the text is not a hello world program, report a warning.
-  for (let i = 0; i < expected.length; i++) {
-    if (text[i] !== expected[i]) {
-      diagnostics.push({
-        message: `Expected '${expected[i]}'.`,
-        severity: DiagnosticSeverity.Warning,
-        range: {
-          start: { line: 0, character: i },
-          end: { line: 0, character: i + 1 },
-        },
-      })
-      break
-    }
-  }
+  const { diagnostics } = parseSource(text)
 
   // Report current diagnostics in the document identified by the `uri`.
   sendNotify("textDocument/publishDiagnostics", {

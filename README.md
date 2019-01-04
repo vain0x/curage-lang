@@ -14,7 +14,30 @@ I am implementing a LSP server for the language. It will have some features, suc
 
 ## Syntax
 
-TBD.
+Curage-lang's syntax is very simple. The following describes the syntax in PEG-like notation.
+
+```fsharp
+eol = "\r\n" / "\n"
+
+expression = int / name
+
+statement = "let" name "be" expression eol
+
+program = statement*
+```
+
+Legends:
+
+- `A*` means a sequence of A or empty,
+- `A+` means a sequence of A at least one,
+- `A / B` means A or B.
+
+Example:
+
+```curage
+let x be 1
+let y be x
+```
 
 ## See also
 
