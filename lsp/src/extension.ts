@@ -3,6 +3,8 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
+// Entry point of the VSCode extension.
+
 import * as path from "path"
 import { ExtensionContext, workspace } from "vscode"
 import {

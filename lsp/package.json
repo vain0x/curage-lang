@@ -26,6 +26,7 @@
   },
   "scripts": {
     "postinstall": "vscode-install",
+    "test": "npm run build && node ./out/tests.js",
     "build": "tsc -b",
     "watch": "tsc -w"
   }
