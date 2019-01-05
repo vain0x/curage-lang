@@ -122,7 +122,7 @@ const rangeToMatrix = (range: Range) => {
  * - Spaces and end-of-lines don't become tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+)|([a-zA-Z0-9_]+)|(.)/g
+  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
 
   const tokens: Token[] = []
 
