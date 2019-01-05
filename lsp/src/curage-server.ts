@@ -117,9 +117,6 @@ const rangeToMatrix = (range: Range) => {
 
 /**
  * Split a source code into a list of tokens.
- *
- * - The result ends with a token with type `eof` to preserve the trailing blank.
- * - Spaces and end-of-lines don't become tokens.
  */
 export const tokenize = (source: string): Token[] => {
   const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
