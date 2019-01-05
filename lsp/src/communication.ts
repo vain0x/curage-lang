@@ -130,3 +130,10 @@ export const sendResponse = (id: number, result: any) => {
 export const sendNotify = (method: string, params: any) => {
   sendLSPMessage({ method, params })
 }
+
+/**
+ * Send a response that failed with an error to the client.
+ */
+export const sendError = (id: number | string | null, code: number, message: string, data?: any) => {
+  sendLSPMessage({ id, error: { code, message, data } })
+}
