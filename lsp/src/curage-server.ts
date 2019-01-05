@@ -85,8 +85,6 @@ type TokenType =
   | "be"
   // end-of-line
   | "eol"
-  // end-of-file
-  | "eof"
   | "invalid"
 
 interface TokenBase {
