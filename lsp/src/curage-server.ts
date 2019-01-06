@@ -229,22 +229,25 @@ const parseTokens = (tokens: Token[]) => {
    * Return the skipped range.
    */
   const skipLine = (): { range: Range } => {
-    if (i >= tokens.length) {
+    // Start of the skipped range.
+    const l = i
+    if (l >= tokens.length) {
       return { range: tokens[tokens.length - 1].range }
     }
 
-    let j = i + 1
-    while (j < tokens.length && tokens[j - 1].type !== "eol") {
-      j++
+    // Exclusive end of the skipped range.
+    let r = l + 1
+    while (r < tokens.length && tokens[r - 1].type !== "eol") {
+      r++
     }
-    assert.ok(i < j && (j >= tokens.length || tokens[j - 1].type === "eol"))
+    assert.ok(l < r && (r >= tokens.length || tokens[r - 1].type === "eol"))
 
     const range = {
-      start: tokens[i].range.start,
-      end: tokens[j - 1].range.end,
+      start: tokens[l].range.start,
+      end: tokens[r - 1].range.end,
     }
 
-    i = j
+    i = r
     return { range }
   }
 
