@@ -237,7 +237,7 @@ const parseTokens = (tokens: Token[]) => {
     while (j < tokens.length && tokens[j - 1].type !== "eol") {
       j++
     }
-    assert.ok(i < j && j >= tokens.length || tokens[j - 1].type === "eol")
+    assert.ok(i < j && (j >= tokens.length || tokens[j - 1].type === "eol"))
 
     const range = {
       start: tokens[i].range.start,
