@@ -12,8 +12,6 @@ import {
   Position,
   Range,
   DidCloseTextDocumentParams,
-  DocumentSymbolParams,
-  DocumentSymbol,
   DocumentHighlight,
   DocumentHighlightKind,
   TextDocumentPositionParams,
@@ -22,9 +20,7 @@ import {
   listenToLSPClient,
   sendNotify,
   sendResponse,
-  sendRequest,
 } from "./communication"
-import { SymbolKind } from "vscode";
 
 interface Message {
   jsonrpc: string,
@@ -208,7 +204,7 @@ export const tokenize = (source: string): Token[] => {
 
       // All of elements are undefined except for the matched alternative.
       const [
-        _match,
+,
         space,
         int,
         name,
