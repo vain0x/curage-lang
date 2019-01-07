@@ -11,6 +11,7 @@ import {
   Diagnostic,
   Position,
   Range,
+  DidCloseTextDocumentParams,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -63,13 +64,17 @@ export const onMessage = (message: Message) => {
     }
     case "textDocument/didOpen": {
       const { textDocument: { uri, text } } = params as DidOpenTextDocumentParams
-      validateDocument(uri, text)
+      documentDidOpenOrChange(uri, text)
       break
     }
     case "textDocument/didChange": {
       const { textDocument: { uri }, contentChanges: [{ text }] } = params as DidChangeTextDocumentParams
-      validateDocument(uri, text)
+      documentDidOpenOrChange(uri, text)
       break
+    }
+    case "textDocument/didClose": {
+      const { textDocument: { uri } } = params as DidCloseTextDocumentParams
+      openDocuments.delete(uri)
     }
     default: {
       // Pass.
@@ -531,15 +536,22 @@ export const testAnalyzeStatements = () => {
 }
 
 /**
- * Validates a document to publish diagnostics (warnings).
+ * Map from URI of open documents to analysis results.
  */
-const validateDocument = (uri: string, text: string) => {
-  const { diagnostics } = analyzeSource(text)
+const openDocuments = new Map<string, SemanticModel>()
+
+/**
+ * Called when a document opens or changed.
+ */
+const documentDidOpenOrChange = (uri: string, text) => {
+  // Perform static analysis.
+  const semanticModel = analyzeSource(text)
+  openDocuments.set(uri, semanticModel)
 
   // Report current diagnostics in the document identified by the `uri`.
+  const { diagnostics } = semanticModel
   sendNotify("textDocument/publishDiagnostics", {
-    uri,
-    diagnostics,
+    uri, diagnostics,
   } as PublishDiagnosticsParams)
 }
 
