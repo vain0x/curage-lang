@@ -12,6 +12,11 @@ import {
   Position,
   Range,
   DidCloseTextDocumentParams,
+  DocumentSymbolParams,
+  DocumentSymbol,
+  DocumentHighlight,
+  DocumentHighlightKind,
+  TextDocumentPositionParams,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -19,6 +24,7 @@ import {
   sendResponse,
   sendRequest,
 } from "./communication"
+import { SymbolKind } from "vscode";
 
 interface Message {
   jsonrpc: string,
@@ -45,6 +51,9 @@ export const onMessage = (message: Message) => {
             // including the full text of the modified document.
             change: TextDocumentSyncKind.Full,
           },
+          // Indicate that the server can respond to
+          // `textDocument/documentHighlight` requests.
+          documentHighlightProvider: true,
         },
       } as InitializeResult)
       break
@@ -75,6 +84,12 @@ export const onMessage = (message: Message) => {
     case "textDocument/didClose": {
       const { textDocument: { uri } } = params as DidCloseTextDocumentParams
       openDocuments.delete(uri)
+    }
+    case "textDocument/documentHighlight": {
+      const { textDocument: { uri }, position } = params as TextDocumentPositionParams
+      const highlights = createHighlights(uri, position)
+      sendResponse(id, highlights || null)
+      return
     }
     default: {
       // Pass.
@@ -612,6 +627,39 @@ const documentDidOpenOrChange = (uri: string, text) => {
   sendNotify("textDocument/publishDiagnostics", {
     uri, diagnostics,
   } as PublishDiagnosticsParams)
+}
+
+/**
+ * Create highlights to emphasis tokens
+ * same as the symbol at the specified position.
+ */
+const createHighlights = (uri: string, position: Position) => {
+  const semanticModel = openDocuments.get(uri)
+  if (!semanticModel) {
+    return
+  }
+
+  const symbolDefinition = hitTestSymbol(semanticModel, position)
+  if (!symbolDefinition) {
+    return
+  }
+
+  const highlights: DocumentHighlight[] = []
+  const { definition, references } = symbolDefinition
+
+  highlights.push({
+    kind: DocumentHighlightKind.Write,
+    range: definition.range,
+  })
+
+  for (const r of references) {
+    highlights.push({
+      kind: DocumentHighlightKind.Read,
+      range: r.range,
+    })
+  }
+
+  return highlights
 }
 
 export const main = () => {
