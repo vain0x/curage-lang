@@ -100,6 +100,18 @@ interface Token extends TokenBase {
   range: Range,
 }
 
+interface Statement {
+  type: "let",
+  name: Token,
+  init: Token,
+}
+
+/** Result of parsing. */
+interface SyntaxModel {
+  statements: Statement[],
+  diagnostics: Diagnostic[],
+}
+
 /**
  * Converts a position to an array `[line, character]`.
  */
@@ -214,11 +226,12 @@ export const testTokenize = () => {
 /**
  * Parse tokens to make diagnostics.
  */
-const parseTokens = (tokens: Token[]) => {
+const parseTokens = (tokens: Token[]): SyntaxModel => {
   const diagnostics: Diagnostic[] = []
+  const statements: Statement[] = []
 
   if (tokens.length === 0) {
-    return { diagnostics }
+    return { statements: [], diagnostics }
   }
 
   // Current token index.
@@ -271,13 +284,14 @@ const parseTokens = (tokens: Token[]) => {
    * Try to parse tokens as an expression.
    * For now, expression is just an integer or name.
    */
-  const tryParseExpression = (): boolean => {
-    if (!isAtomicExpression(tokens[i])) {
-      return false
+  const tryParseExpression = (): Token | undefined => {
+    const token = tokens[i]
+    if (!isAtomicExpression(token)) {
+      return undefined
     }
 
     i++
-    return true
+    return token
   }
 
   const parseLetStatement = (): void => {
@@ -286,7 +300,8 @@ const parseTokens = (tokens: Token[]) => {
     }
     i++
 
-    if (tokens[i].type !== "name") {
+    const nameToken = tokens[i]
+    if (nameToken.type !== "name") {
       return warn("Expected a name.")
     }
     i++
@@ -297,7 +312,8 @@ const parseTokens = (tokens: Token[]) => {
     }
     i++
 
-    if (!tryParseExpression()) {
+    const initToken = tryParseExpression()
+    if (!initToken) {
       return warn("Expected an expression.")
     }
 
@@ -305,13 +321,19 @@ const parseTokens = (tokens: Token[]) => {
       return warn("Expected an end of line.")
     }
     i++
+
+    statements.push({
+      type: "let",
+      name: nameToken,
+      init: initToken,
+    })
   }
 
   while (i < tokens.length) {
     parseLetStatement()
   }
 
-  return { diagnostics }
+  return { statements, diagnostics }
 }
 
 const parseSource = (source: string) => {
@@ -322,30 +344,49 @@ export const testParseTokens = () => {
   const table = [
     {
       source: "let x be 1\nlet y be x",
-      expected: [],
+      expected: [
+        [
+          ["let", "x", "1"],
+          ["let", "y", "x"],
+        ],
+        []
+      ],
     },
     {
       source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
       expected: [
-        ["Expected a name.", [[0, 4], [0, 4]]],
-        ["Expected 'let'.", [[2, 0], [2, 4]]],
-        ["Expected an expression.", [[3, 9], [3, 9]]],
-        ["Expected a name.", [[4, 4], [4, 10]]],
+        [
+          ["let", "x", "1"],
+        ],
+        [
+          ["Expected a name.", [[0, 4], [0, 4]]],
+          ["Expected 'let'.", [[2, 0], [2, 4]]],
+          ["Expected an expression.", [[3, 9], [3, 9]]],
+          ["Expected a name.", [[4, 4], [4, 10]]],
+        ],
       ],
     },
     {
       source: "let x = 1;",
       expected: [
-        ["Expected 'be'.", [[0, 6], [0, 10]]],
+        [],
+        [
+          ["Expected 'be'.", [[0, 6], [0, 10]]],
+        ],
       ],
     },
   ]
 
   for (const { source, expected } of table) {
-    const { diagnostics } = parseSource(source)
-    const actual = diagnostics.map(d => (
-      [d.message, rangeToMatrix(d.range)]
-    ))
+    const { statements, diagnostics } = parseSource(source)
+    const actual = [
+      statements.map(s => (
+        [s.type, s.name.value, s.init.value]
+      )),
+      diagnostics.map(d => (
+        [d.message, rangeToMatrix(d.range)]
+      ))
+    ]
     assert.deepStrictEqual(actual, expected)
   }
 }
