@@ -48,5 +48,6 @@ let y be x
 
 ## See also
 
+- [Official page for Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 - [Language Server Extension Guide | Visual Studio Code Extension API](https://code.visualstudio.com/api/language-extensions/language-server-extension-guide)
 - [lsp-sample](https://github.com/Microsoft/vscode-extension-samples/tree/515a928615aaab84ae7f66a38e4346db84464fcb/lsp-sample)
