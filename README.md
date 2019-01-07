@@ -39,6 +39,13 @@ let x be 1
 let y be x
 ```
 
+## Tags and Features
+
+- v0.1.0: Minimum implementation of LSP server
+- v0.2.0: Sample of error reporting
+- v0.3.0: Syntactical analysis and syntax error reporting
+- v0.4.0: Semantical analysis, hit-testing and symbol highlighting
+
 ## See also
 
 - [Language Server Extension Guide | Visual Studio Code Extension API](https://code.visualstudio.com/api/language-extensions/language-server-extension-guide)
