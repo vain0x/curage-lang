@@ -46,6 +46,12 @@ let y be x
 - v0.3.0: Syntactical analysis and syntax error reporting
 - v0.4.0: Semantical analysis, hit-testing and symbol highlighting
 
+## Articles
+
+I'm writing a series of articles to explain source codes in this repository. Written in Japanese language.
+
+- First chapter: [LSP学習記 #1](https://qiita.com/vain0x/items/d050fe7c8b342ed2004e)
+
 ## See also
 
 - [Official page for Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
