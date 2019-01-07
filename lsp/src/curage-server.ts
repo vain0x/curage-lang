@@ -113,6 +113,24 @@ interface SyntaxModel {
 }
 
 /**
+ * Definition of a symbol: name of some context.
+ */
+interface SymbolDefinition {
+  type: "var",
+  /** The definition-site of the symbol. */
+  definition: Token,
+  /** Tokens that refers to the symbol. */
+  references: Token[],
+}
+
+/** Result of static analysis. */
+interface SemanticModel {
+  statements: Statement[],
+  symbolDefinitions: SymbolDefinition[],
+  diagnostics: Diagnostic[],
+}
+
+/**
  * Converts a position to an array `[line, character]`.
  */
 const positionToArray = (position: Position) => {
@@ -392,10 +410,131 @@ export const testParseTokens = () => {
 }
 
 /**
+ * Performs semantic analysis statically
+ * to make a mapping between tokens and symbols.
+ */
+const analyzeStatements = (statements: Statement[]): SemanticModel => {
+  const symbolDefinitions: SymbolDefinition[] = []
+
+  // Map from names to defined symbols.
+  const environment = new Map<string, SymbolDefinition>()
+
+  const diagnostics: Diagnostic[] = []
+
+  const defineName = (nameToken: Token) => {
+    assert.strictEqual(nameToken.type, "name")
+
+    const definition: SymbolDefinition = {
+      type: "var",
+      definition: nameToken,
+      references: [],
+    }
+
+    symbolDefinitions.push(definition)
+    environment.set(nameToken.value, definition)
+  }
+
+  const referName = (nameToken: Token) => {
+    assert.strictEqual(nameToken.type, "name")
+
+    // Find the symbol that the name refers to.
+    const symbolDefinition = environment.get(nameToken.value)
+
+    // If missing, it's not defined yet.
+    if (!symbolDefinition) {
+      diagnostics.push({
+        severity: DiagnosticSeverity.Warning,
+        message: `'${nameToken.value}' is not defined.`,
+        range: nameToken.range,
+        source: "curage-lang lsp",
+      })
+      return
+    }
+
+    // Add to the list of reference-site tokens to find.
+    symbolDefinition.references.push(nameToken)
+  }
+
+  for (const statement of statements) {
+    if (statement.type === "let") {
+      const { init, name } = statement
+
+      if (init.type === "name") {
+        referName(init)
+      }
+
+      if (name.type === "name") {
+        defineName(name)
+      }
+    } else {
+      throw new Error("NEVER")
+    }
+  }
+
+  return { statements, symbolDefinitions, diagnostics }
+}
+
+const analyzeSource = (source: string): SemanticModel => {
+  const { statements, diagnostics: d1 } = parseSource(source)
+  const { symbolDefinitions, diagnostics: d2 } = analyzeStatements(statements)
+  return {
+    statements,
+    symbolDefinitions,
+    diagnostics: [...d1, ...d2],
+  }
+}
+
+export const testAnalyzeStatements = () => {
+  const table = [
+    // Shadowing case.
+    {
+      source: "let x be 1\nlet y be x\nlet x be y",
+      expected: [
+        [
+          ["var", "x", [0, 4], [[1, 9]]],
+          ["var", "y", [1, 4], [[2, 9]]],
+          ["var", "x", [2, 4], []],
+        ],
+        [],
+      ],
+    },
+    // Use-of-undefined-variable case.
+    {
+      source: "let x be x",
+      expected: [
+        [
+          ["var", "x", [0, 4], []],
+        ],
+        [
+          ["'x' is not defined.", [0, 9]],
+        ],
+      ],
+    },
+  ]
+
+  for (const { source, expected } of table) {
+    const { symbolDefinitions, diagnostics } = analyzeSource(source)
+    const actual = [
+      symbolDefinitions.map(s => [
+        s.type,
+        s.definition.value,
+        positionToArray(s.definition.range.start),
+        s.references.map(t => positionToArray(t.range.start)),
+      ]),
+      diagnostics.map(d => [
+        d.message,
+        positionToArray(d.range.start),
+      ])
+    ]
+    assert.deepStrictEqual(actual, expected)
+  }
+}
+
+/**
  * Validates a document to publish diagnostics (warnings).
  */
 const validateDocument = (uri: string, text: string) => {
-  const { diagnostics } = parseSource(text)
+  const { diagnostics } = analyzeSource(text)
 
   // Report current diagnostics in the document identified by the `uri`.
   sendNotify("textDocument/publishDiagnostics", {
