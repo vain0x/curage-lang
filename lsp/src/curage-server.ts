@@ -135,6 +135,13 @@ interface SemanticModel {
   diagnostics: Diagnostic[],
 }
 
+const comparePositions = (l: Position, r: Position) => {
+  if (l.line !== r.line) {
+    return Math.sign(l.line - r.line)
+  }
+  return Math.sign(l.character - r.character)
+}
+
 /**
  * Converts a position to an array `[line, character]`.
  */
@@ -532,6 +539,58 @@ export const testAnalyzeStatements = () => {
       ])
     ]
     assert.deepStrictEqual(actual, expected)
+  }
+}
+
+/**
+ * Find the symbol at the specified position.
+ */
+const hitTestSymbol = (semanticModel: SemanticModel, position: Position) => {
+  const touch = (range: Range) =>
+    comparePositions(range.start, position) <= 0
+    && comparePositions(position, range.end) <= 0
+
+  for (const symbolDefinition of semanticModel.symbolDefinitions) {
+    if (touch(symbolDefinition.definition.range)) {
+      return symbolDefinition
+    }
+
+    for (const r of symbolDefinition.references) {
+      if (touch(r.range)) {
+        return symbolDefinition
+      }
+    }
+  }
+
+  return undefined
+}
+
+export const testHitTestSymbol = () => {
+  const table = [
+    {
+      source: "let answer be 42",
+      positions: [[0, 4], [0, 5], [0, 10]],
+      expected: "answer",
+    },
+    {
+      source: "let answer be 42\nlet x be answer\nlet y be answer\n",
+      positions: [[1, 9], [2, 15]],
+      expected: "answer",
+    },
+    {
+      source: "let x      be 42\n",
+      positions: [[0, 0], [0, 6], [0, 14], [1, 0]],
+      expected: undefined,
+    }
+  ]
+
+  for (const { source, positions, expected } of table) {
+    const semanticModel = analyzeSource(source)
+
+    for (const [line, character] of positions) {
+      const symbol = hitTestSymbol(semanticModel, { line, character })
+      assert.deepStrictEqual(symbol && symbol.definition.value, expected)
+    }
   }
 }
 
