@@ -15,6 +15,9 @@ import {
   DocumentHighlight,
   DocumentHighlightKind,
   TextDocumentPositionParams,
+  RenameParams,
+  WorkspaceEdit,
+  TextEdit,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -50,6 +53,9 @@ export const onMessage = (message: Message) => {
           // Indicate that the server can respond to
           // `textDocument/documentHighlight` requests.
           documentHighlightProvider: true,
+          // Indicate that the server can respond to
+          // `textDocument/rename` requests.
+          renameProvider: true,
         },
       } as InitializeResult)
       break
@@ -85,6 +91,12 @@ export const onMessage = (message: Message) => {
       const { textDocument: { uri }, position } = params as TextDocumentPositionParams
       const highlights = createHighlights(uri, position)
       sendResponse(id, highlights || null)
+      return
+    }
+    case "textDocument/rename": {
+      const { textDocument: { uri }, position, newName } = params as RenameParams
+      const workspaceEdit = createRenameEdit(uri, position, newName)
+      sendResponse(id, workspaceEdit || null)
       return
     }
     default: {
@@ -204,7 +216,7 @@ export const tokenize = (source: string): Token[] => {
 
       // All of elements are undefined except for the matched alternative.
       const [
-,
+        ,
         space,
         int,
         name,
@@ -656,6 +668,36 @@ const createHighlights = (uri: string, position: Position) => {
   }
 
   return highlights
+}
+
+const createRenameEdit = (uri: string, position: Position, newName: string): WorkspaceEdit | undefined => {
+  const semanticModel = openDocuments.get(uri)
+  if (!semanticModel) {
+    return
+  }
+
+  const symbolDefinition = hitTestSymbol(semanticModel, position)
+  if (!symbolDefinition) {
+    return
+  }
+
+  const textEdits: TextEdit[] = []
+  const { definition, references } = symbolDefinition
+
+  textEdits.push({
+    range: definition.range,
+    newText: newName,
+  })
+
+  for (const r of references) {
+    textEdits.push({
+      range: r.range,
+      newText: newName,
+    })
+  }
+
+  const changes = { [uri]: textEdits }
+  return { changes }
 }
 
 export const main = () => {
