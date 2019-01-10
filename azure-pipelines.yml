@@ -16,7 +16,10 @@ steps:
   displayName: 'Install Node.js'
 
 - script: |
-    yarn
-    yarn build
-    yarn test
+    (
+      cd lsp
+      && yarn
+      && yarn build
+      && yarn test
+    )
   displayName: 'Install, build and test'
