@@ -2,9 +2,7 @@
 
 This project is my study for language server protocol (LSP) server implementation.
 
-Curage-lang itself is a tiny, no-interesting language.
-
-I am implementing a LSP server for the language. It will have some features, such as "use of undefined variable" reporting, symbol renaming, etc.
+Curage-lang itself is tiny, no-interesting language. I am implementing a LSP server for the language. It has some features, such as syntax error reporting, symbol renaming, etc.
 
 ## Structure
 
@@ -44,7 +42,8 @@ let y be x
 - v0.1.0: Minimum implementation of LSP server
 - v0.2.0: Sample of error reporting
 - v0.3.0: Syntactical analysis and syntax error reporting
-- v0.4.0: Semantical analysis, hit-testing and symbol highlighting
+- v0.4.0: Semantic analysis, hit-testing and symbol highlighting
+- v0.5.0: Symbol renaming
 
 ## Articles
 
