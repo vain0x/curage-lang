@@ -18,6 +18,7 @@ import {
   RenameParams,
   WorkspaceEdit,
   TextEdit,
+  InitializeParams,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -37,6 +38,8 @@ export const onMessage = (message: Message) => {
 
   switch (method) {
     case "initialize": {
+      const { capabilities } = params as InitializeParams
+
       sendResponse(id, {
         capabilities: {
           textDocumentSync: {
@@ -54,8 +57,13 @@ export const onMessage = (message: Message) => {
           // `textDocument/documentHighlight` requests.
           documentHighlightProvider: true,
           // Indicate that the server can respond to
-          // `textDocument/rename` requests.
-          renameProvider: true,
+          // `textDocument/rename` requests;
+          // and `textDocument/prepareRename` if the client supports.
+          renameProvider:
+            capabilities.textDocument.rename
+              && capabilities.textDocument.rename.prepareSupport
+              ? { prepareProvider: true }
+              : true,
         },
       } as InitializeResult)
       break
@@ -91,6 +99,12 @@ export const onMessage = (message: Message) => {
       const { textDocument: { uri }, position } = params as TextDocumentPositionParams
       const highlights = createHighlights(uri, position)
       sendResponse(id, highlights || null)
+      return
+    }
+    case "textDocument/prepareRename": {
+      const { textDocument: { uri }, position } = params as TextDocumentPositionParams
+      const result = prepareRename(uri, position)
+      sendResponse(id, result || null)
       return
     }
     case "textDocument/rename": {
@@ -575,12 +589,12 @@ const hitTestSymbol = (semanticModel: SemanticModel, position: Position) => {
 
   for (const symbolDefinition of semanticModel.symbolDefinitions) {
     if (touch(symbolDefinition.definition.range)) {
-      return symbolDefinition
+      return { symbolDefinition, token: symbolDefinition.definition }
     }
 
     for (const r of symbolDefinition.references) {
       if (touch(r.range)) {
-        return symbolDefinition
+        return { symbolDefinition, token: r }
       }
     }
   }
@@ -589,6 +603,8 @@ const hitTestSymbol = (semanticModel: SemanticModel, position: Position) => {
 }
 
 export const testHitTestSymbol = () => {
+  // Tests for returned symbol definition.
+
   const table = [
     {
       source: "let answer be 42",
@@ -611,8 +627,38 @@ export const testHitTestSymbol = () => {
     const semanticModel = analyzeSource(source)
 
     for (const [line, character] of positions) {
-      const symbol = hitTestSymbol(semanticModel, { line, character })
+      const hit = hitTestSymbol(semanticModel, { line, character })
+      const symbol = hit && hit.symbolDefinition
       assert.deepStrictEqual(symbol && symbol.definition.value, expected)
+    }
+  }
+
+  // Tests for returned token.
+  {
+    const table = [
+      {
+        source: "let x be 1",
+        position: [0, 5],
+        expected: [0, 4],
+      },
+      {
+        source: "let x be 1\nlet y be x",
+        position: [1, 10],
+        expected: [1, 9],
+      },
+      {
+        source: "let x be 1",
+        position: [0, 0],
+        expected: undefined,
+      },
+    ]
+
+    for (const { source, position: [line, character], expected } of table) {
+      const semanticModel = analyzeSource(source)
+      const hit = hitTestSymbol(semanticModel, { line, character })
+      const token = hit && hit.token
+      const actual = token && positionToArray(token.range.start)
+      assert.deepStrictEqual(actual, expected)
     }
   }
 }
@@ -647,13 +693,13 @@ const createHighlights = (uri: string, position: Position) => {
     return
   }
 
-  const symbolDefinition = hitTestSymbol(semanticModel, position)
-  if (!symbolDefinition) {
+  const hit = hitTestSymbol(semanticModel, position)
+  if (!hit) {
     return
   }
 
   const highlights: DocumentHighlight[] = []
-  const { definition, references } = symbolDefinition
+  const { definition, references } = hit.symbolDefinition
 
   highlights.push({
     kind: DocumentHighlightKind.Write,
@@ -670,19 +716,42 @@ const createHighlights = (uri: string, position: Position) => {
   return highlights
 }
 
+/**
+ * Prepare for symbol renaming.
+ *
+ * Return the range of pointed symbol and current name as placeholder.
+ */
+const prepareRename = (uri: string, position: Position) => {
+  const semanticModel = openDocuments.get(uri)
+  if (!semanticModel) {
+    return
+  }
+
+  const hit = hitTestSymbol(semanticModel, position)
+  if (!hit) {
+    return
+  }
+
+  const { token } = hit
+  return token.range
+}
+
+/**
+ * Calculate edits for symbol renaming.
+ */
 const createRenameEdit = (uri: string, position: Position, newName: string): WorkspaceEdit | undefined => {
   const semanticModel = openDocuments.get(uri)
   if (!semanticModel) {
     return
   }
 
-  const symbolDefinition = hitTestSymbol(semanticModel, position)
-  if (!symbolDefinition) {
+  const hit = hitTestSymbol(semanticModel, position)
+  if (!hit) {
     return
   }
 
   const textEdits: TextEdit[] = []
-  const { definition, references } = symbolDefinition
+  const { definition, references } = hit.symbolDefinition
 
   textEdits.push({
     range: definition.range,
