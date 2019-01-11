@@ -19,6 +19,7 @@ import {
   WorkspaceEdit,
   TextEdit,
   InitializeParams,
+  TextDocumentEdit,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -759,23 +760,25 @@ const createRenameEdit = (uri: string, position: Position, newName: string): Wor
     return
   }
 
-  const textEdits: TextEdit[] = []
+  const edits: TextEdit[] = []
   const { definition, references } = hit.symbolDefinition
 
-  textEdits.push({
+  edits.push({
     range: definition.range,
     newText: newName,
   })
 
   for (const r of references) {
-    textEdits.push({
+    edits.push({
       range: r.range,
       newText: newName,
     })
   }
 
-  const changes = { [uri]: textEdits }
-  return { changes }
+  const documentChanges: TextDocumentEdit[] = [
+    { textDocument: { uri, version: openDocument.version }, edits }
+  ]
+  return { documentChanges }
 }
 
 export const main = () => {
