@@ -82,13 +82,13 @@ export const onMessage = (message: Message) => {
       break
     }
     case "textDocument/didOpen": {
-      const { textDocument: { uri, text } } = params as DidOpenTextDocumentParams
-      documentDidOpenOrChange(uri, text)
+      const { textDocument: { uri, version, text } } = params as DidOpenTextDocumentParams
+      documentDidOpenOrChange(uri, version, text)
       break
     }
     case "textDocument/didChange": {
-      const { textDocument: { uri }, contentChanges: [{ text }] } = params as DidChangeTextDocumentParams
-      documentDidOpenOrChange(uri, text)
+      const { textDocument: { uri, version }, contentChanges: [{ text }] } = params as DidChangeTextDocumentParams
+      documentDidOpenOrChange(uri, version, text)
       break
     }
     case "textDocument/didClose": {
@@ -663,18 +663,27 @@ export const testHitTestSymbol = () => {
   }
 }
 
+interface OpenDocument {
+  version: number,
+  semanticModel: SemanticModel,
+}
+
 /**
  * Map from URI of open documents to analysis results.
  */
-const openDocuments = new Map<string, SemanticModel>()
+const openDocuments = new Map<string, OpenDocument>()
 
 /**
  * Called when a document opens or changed.
  */
-const documentDidOpenOrChange = (uri: string, text) => {
+const documentDidOpenOrChange = (uri: string, version: number, text: string) => {
+  // Prevent overwriting by old version.
+  const current = openDocuments.get(uri)
+  if (current && current.version > version) return
+
   // Perform static analysis.
   const semanticModel = analyzeSource(text)
-  openDocuments.set(uri, semanticModel)
+  openDocuments.set(uri, { version, semanticModel })
 
   // Report current diagnostics in the document identified by the `uri`.
   const { diagnostics } = semanticModel
@@ -688,12 +697,12 @@ const documentDidOpenOrChange = (uri: string, text) => {
  * same as the symbol at the specified position.
  */
 const createHighlights = (uri: string, position: Position) => {
-  const semanticModel = openDocuments.get(uri)
-  if (!semanticModel) {
+  const openDocument = openDocuments.get(uri)
+  if (!openDocument) {
     return
   }
 
-  const hit = hitTestSymbol(semanticModel, position)
+  const hit = hitTestSymbol(openDocument.semanticModel, position)
   if (!hit) {
     return
   }
@@ -722,12 +731,12 @@ const createHighlights = (uri: string, position: Position) => {
  * Return the range of pointed symbol and current name as placeholder.
  */
 const prepareRename = (uri: string, position: Position) => {
-  const semanticModel = openDocuments.get(uri)
-  if (!semanticModel) {
+  const openDocument = openDocuments.get(uri)
+  if (!openDocument) {
     return
   }
 
-  const hit = hitTestSymbol(semanticModel, position)
+  const hit = hitTestSymbol(openDocument.semanticModel, position)
   if (!hit) {
     return
   }
@@ -740,12 +749,12 @@ const prepareRename = (uri: string, position: Position) => {
  * Calculate edits for symbol renaming.
  */
 const createRenameEdit = (uri: string, position: Position, newName: string): WorkspaceEdit | undefined => {
-  const semanticModel = openDocuments.get(uri)
-  if (!semanticModel) {
+  const openDocument = openDocuments.get(uri)
+  if (!openDocument) {
     return
   }
 
-  const hit = hitTestSymbol(semanticModel, position)
+  const hit = hitTestSymbol(openDocument.semanticModel, position)
   if (!hit) {
     return
   }
