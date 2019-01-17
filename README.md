@@ -17,7 +17,9 @@ Curage-lang's syntax is very simple. The following describes the syntax in PEG-l
 ```fsharp
 eol = "\r\n" / "\n"
 
-expression = int / name
+atomic = int / name
+
+expression = atomic "+" atomic / atomic
 
 statement = "let" name "be" expression eol
 
