@@ -124,6 +124,7 @@ export const onMessage = (message: Message) => {
 type TokenType =
   | "int"
   | "name"
+  | "operator"
   | "let"
   | "be"
   // end-of-line
@@ -152,6 +153,12 @@ type Expression =
   | {
     type: "atomic",
     token: Token,
+  }
+  | {
+    type: "binary",
+    operator: Token,
+    left: Token,
+    right: Token,
   }
 
 interface ErrorStatement {
@@ -228,6 +235,10 @@ const expressionToArray = (expression: Expression) => {
     const { type, token } = expression
     return [type, tokenToArray(token)]
   }
+  if (expression.type === "binary") {
+    const { type, operator, left, right } = expression
+    return [type, tokenToArray(operator), tokenToArray(left), tokenToArray(right)]
+  }
   throw new Error("Never")
 }
 
@@ -247,7 +258,7 @@ const statementToArray = (statement: Statement) => {
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
+  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([+]+)|(.)/g
 
   const tokens: Token[] = []
 
@@ -283,6 +294,7 @@ export const tokenize = (source: string): Token[] => {
         space,
         int,
         name,
+        operator,
         invalid,
       ] = match
 
@@ -299,6 +311,10 @@ export const tokenize = (source: string): Token[] => {
       }
       if (name) {
         push({ type: "name", value: name })
+        continue
+      }
+      if (operator) {
+        push({ type: "operator", value: operator })
         continue
       }
       if (invalid) {
@@ -413,6 +429,19 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
    * For now, expression is just an integer or name.
    */
   const parseExpression = (): Expression => {
+    if (
+      i + 2 < tokens.length
+      && isAtomicExpression(tokens[i])
+      && tokens[i + 1].type === "operator"
+      && isAtomicExpression(tokens[i + 2])
+    ) {
+      const left = tokens[i]
+      const operator = tokens[i + 1]
+      const right = tokens[i + 2]
+      i += 3
+      return { type: "binary", operator, left, right }
+    }
+
     const token = tokens[i]
     if (!isAtomicExpression(token)) {
       const e: Expression = {
@@ -442,7 +471,6 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
 
     if (tokens[i].type !== "be") {
       return warn("Expected 'be'.")
-
     }
     i++
 
@@ -482,6 +510,20 @@ export const testParseTokens = () => {
           ["let", ["name", "y"], ["atomic", ["name", "x"]]],
         ],
         []
+      ],
+    },
+    {
+      source: "let x be 1 + 2",
+      expected: [
+        [
+          ["let", ["name", "x"], [
+            "binary",
+            ["operator", "+"],
+            ["int", "1"],
+            ["int", "2"],
+          ]],
+        ],
+        [],
       ],
     },
     {
@@ -573,12 +615,20 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
     symbolDefinition.references.push(nameToken)
   }
 
+  const analyzeToken = (token: Token) => {
+    if (token.type === "name") {
+      referName(token)
+    }
+  }
+
   const analyzeExpression = (expression: Expression) => {
     if (expression.type === "atomic") {
-      const token = expression.token
-      if (token.type === "name") {
-        referName(token)
-      }
+      analyzeToken(expression.token)
+    }
+    if (expression.type === "binary") {
+      const { left, right } = expression
+      analyzeToken(left)
+      analyzeToken(right)
     }
   }
 
@@ -770,6 +820,13 @@ const evaluate = (statements: Statement[]) => {
     if (expression.type === "atomic") {
       return evaluateToken(expression.token)
     }
+    if (expression.type === "binary") {
+      const { operator, left, right } = expression
+      if (operator.value === "+") {
+        return evaluateToken(left) + evaluateToken(right)
+      }
+      throw fail("Undefined operator", operator.range)
+    }
     throw new Error("Never")
   }
 
@@ -804,6 +861,11 @@ export const testEvaluate = () => {
       source: "let x be 1\nlet x be 2\nlet y be x",
       name: "y",
       expected: 2,
+    },
+    {
+      source: "let x be 2\nlet y be x + 3",
+      name: "y",
+      expected: 5,
     },
   ]
   for (const { source, name, expected } of table) {
