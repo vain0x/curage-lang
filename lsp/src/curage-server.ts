@@ -201,6 +201,12 @@ interface SemanticModel {
   diagnostics: Diagnostic[],
 }
 
+/**
+ * The TypeScript compiler checks if
+ * there is no control flow to call this function.
+ */
+const exhaust = (value: never) => value
+
 const comparePositions = (l: Position, r: Position) => {
   if (l.line !== r.line) {
     return Math.sign(l.line - r.line)
@@ -239,7 +245,7 @@ const expressionToArray = (expression: Expression) => {
     const { type, operator, left, right } = expression
     return [type, tokenToArray(operator), tokenToArray(left), tokenToArray(right)]
   }
-  throw new Error("Never")
+  throw exhaust(expression)
 }
 
 const statementToArray = (statement: Statement) => {
@@ -251,7 +257,7 @@ const statementToArray = (statement: Statement) => {
     const { type, name, init } = statement
     return [type, tokenToArray(name), expressionToArray(init)]
   }
-  throw new Error("Never")
+  throw exhaust(statement)
 }
 
 /**
@@ -646,7 +652,7 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       }
       continue
     }
-    throw new Error("NEVER")
+    throw exhaust(statement)
   }
 
   return { statements, symbolDefinitions, diagnostics }
@@ -830,7 +836,7 @@ const evaluate = (statements: Statement[]) => {
       }
       throw fail("Undefined operator", operator.range)
     }
-    throw new Error("Never")
+    throw exhaust(expression)
   }
 
   const evaluateStatement = (statement: Statement) => {
@@ -843,7 +849,7 @@ const evaluate = (statements: Statement[]) => {
       env.set(statement.name.value, value)
       return
     }
-    throw new Error("Never")
+    throw exhaust(statement)
   }
 
   for (const statement of statements) {
