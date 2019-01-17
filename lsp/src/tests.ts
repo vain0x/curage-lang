@@ -6,6 +6,7 @@ import {
   testParseTokens,
   testAnalyzeStatements,
   testHitTestSymbol,
+  testEvaluate,
 } from "./curage-server"
 
 testTryParseLSPMessage()
@@ -13,5 +14,6 @@ testTokenize()
 testParseTokens()
 testAnalyzeStatements()
 testHitTestSymbol()
+testEvaluate()
 
 console.log("Success!")

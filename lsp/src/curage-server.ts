@@ -699,6 +699,71 @@ export const testHitTestSymbol = () => {
   }
 }
 
+/** Evaluate the program and print the last variable. */
+const evaluate = (statements: Statement[]) => {
+  /** Map from variable names to values. */
+  const env = new Map<string, any>()
+
+  const fail = (message: string, range: Range): never => {
+    const { line, character } = range.start
+    throw new Error(`Error: ${message} at line ${1 + line} column ${1 + character}`)
+  }
+
+  const evaluateExpression = (token: Token) => {
+    if (token.type === "invalid") {
+      throw fail("Invalid character", token.range)
+    }
+    if (token.type === "int") {
+      return Number.parseInt(token.value, 10)
+    }
+    if (token.type === "name") {
+      const value = env.get(token.value)
+      if (!value) {
+        throw fail(`Undefined variable ${token.value}`, token.range)
+      }
+      return value
+    }
+  }
+
+  const evaluateStatement = (statement: Statement) => {
+    if (statement.type === "error") {
+      const { message, range } = statement
+      throw fail(message, range)
+    }
+    if (statement.type === "let") {
+      const value = evaluateExpression(statement.init)
+      env.set(statement.name.value, value)
+      return
+    }
+    throw new Error("Never")
+  }
+
+  for (const statement of statements) {
+    evaluateStatement(statement)
+  }
+
+  return env
+}
+
+const evaluateSource = (source: string) => {
+  const { statements } = parseSource(source)
+  return evaluate(statements)
+}
+
+export const testEvaluate = () => {
+  const table = [
+    {
+      source: "let x be 1\nlet x be 2\nlet y be x",
+      name: "y",
+      expected: 2,
+    },
+  ]
+  for (const { source, name, expected } of table) {
+    const env = evaluateSource(source)
+    assert.deepStrictEqual(env.get(name), expected)
+  }
+}
+
 interface OpenDocument {
   version: number,
   semanticModel: SemanticModel,
