@@ -143,6 +143,17 @@ interface Token extends TokenBase {
   range: Range,
 }
 
+type Expression =
+  | {
+    type: "error",
+    message: string,
+    range: Range,
+  }
+  | {
+    type: "atomic",
+    token: Token,
+  }
+
 interface ErrorStatement {
   type: "error",
   message: string,
@@ -152,7 +163,7 @@ interface ErrorStatement {
 interface LetStatement {
   type: "let",
   name: Token,
-  init: Token,
+  init: Expression,
 }
 
 type Statement =
@@ -209,6 +220,17 @@ const tokenToArray = (token: Token) => {
   return [token.type, token.value]
 }
 
+const expressionToArray = (expression: Expression) => {
+  if (expression.type === "error") {
+    return [expression.type]
+  }
+  if (expression.type === "atomic") {
+    const { type, token } = expression
+    return [type, tokenToArray(token)]
+  }
+  throw new Error("Never")
+}
+
 const statementToArray = (statement: Statement) => {
   if (statement.type == "error") {
     const { type, message } = statement
@@ -216,7 +238,7 @@ const statementToArray = (statement: Statement) => {
   }
   if (statement.type === "let") {
     const { type, name, init } = statement
-    return [type, tokenToArray(name), tokenToArray(init)]
+    return [type, tokenToArray(name), expressionToArray(init)]
   }
   throw new Error("Never")
 }
@@ -331,6 +353,9 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
   // Current token index.
   let i = 0
 
+  // Whether the current line has an error.
+  let hasError = false
+
   /**
    * Skip over the current line.
    * Return the skipped range.
@@ -362,6 +387,10 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
    * Skip over the current line and report a warning on it.
    */
   const warn = (message: string) => {
+    // Don't report warnings more than once per line.
+    if (hasError) return
+    hasError = true
+
     const { range } = skipLine()
     diagnostics.push({
       severity: DiagnosticSeverity.Warning,
@@ -380,17 +409,23 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
   }
 
   /**
-   * Try to parse tokens as an expression.
+   * Parse tokens as an expression.
    * For now, expression is just an integer or name.
    */
-  const tryParseExpression = (): Token | undefined => {
+  const parseExpression = (): Expression => {
     const token = tokens[i]
     if (!isAtomicExpression(token)) {
-      return undefined
+      const e: Expression = {
+        type: "error",
+        message: "Expected an expression.",
+        range: token.range,
+      }
+      warn(e.message)
+      return e
     }
-
     i++
-    return token
+
+    return { type: "atomic", token }
   }
 
   const parseLetStatement = (): void => {
@@ -411,10 +446,7 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
     i++
 
-    const initToken = tryParseExpression()
-    if (!initToken) {
-      return warn("Expected an expression.")
-    }
+    const initExpression = parseExpression()
 
     if (tokens[i].type !== "eol") {
       return warn("Expected an end of line.")
@@ -424,11 +456,12 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     statements.push({
       type: "let",
       name: nameToken,
-      init: initToken,
+      init: initExpression,
     })
   }
 
   while (i < tokens.length) {
+    hasError = false
     parseLetStatement()
   }
 
@@ -445,8 +478,8 @@ export const testParseTokens = () => {
       source: "let x be 1\nlet y be x",
       expected: [
         [
-          ["let", ["name", "x"], ["int", "1"]],
-          ["let", ["name", "y"], ["name", "x"]],
+          ["let", ["name", "x"], ["atomic", ["int", "1"]]],
+          ["let", ["name", "y"], ["atomic", ["name", "x"]]],
         ],
         []
       ],
@@ -456,7 +489,7 @@ export const testParseTokens = () => {
       expected: [
         [
           ["error"],
-          ["let", ["name", "x"], ["int", "1"]],
+          ["let", ["name", "x"], ["atomic", ["int", "1"]]],
           ["error"],
           ["error"],
           ["error"],
@@ -540,13 +573,20 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
     symbolDefinition.references.push(nameToken)
   }
 
+  const analyzeExpression = (expression: Expression) => {
+    if (expression.type === "atomic") {
+      const token = expression.token
+      if (token.type === "name") {
+        referName(token)
+      }
+    }
+  }
+
   for (const statement of statements) {
     if (statement.type === "let") {
       const { init, name } = statement
 
-      if (init.type === "name") {
-        referName(init)
-      }
+      analyzeExpression(init)
 
       if (name.type === "name") {
         defineName(name)
@@ -709,10 +749,7 @@ const evaluate = (statements: Statement[]) => {
     throw new Error(`Error: ${message} at line ${1 + line} column ${1 + character}`)
   }
 
-  const evaluateExpression = (token: Token) => {
-    if (token.type === "invalid") {
-      throw fail("Invalid character", token.range)
-    }
+  const evaluateToken = (token: Token) => {
     if (token.type === "int") {
       return Number.parseInt(token.value, 10)
     }
@@ -723,6 +760,17 @@ const evaluate = (statements: Statement[]) => {
       }
       return value
     }
+    throw fail("Invalid value", token.range)
+  }
+
+  const evaluateExpression = (expression: Expression) => {
+    if (expression.type === "error") {
+      throw fail(expression.message, expression.range)
+    }
+    if (expression.type === "atomic") {
+      return evaluateToken(expression.token)
+    }
+    throw new Error("Never")
   }
 
   const evaluateStatement = (statement: Statement) => {
