@@ -61,7 +61,8 @@ export const onMessage = (message: Message) => {
           // `textDocument/rename` requests;
           // and `textDocument/prepareRename` if the client supports.
           renameProvider:
-            capabilities.textDocument.rename
+            capabilities.textDocument
+              && capabilities.textDocument.rename
               && capabilities.textDocument.rename.prepareSupport
               ? { prepareProvider: true }
               : true,
@@ -884,7 +885,7 @@ export const testEvaluate = () => {
 }
 
 interface OpenDocument {
-  version: number,
+  version: number | null,
   semanticModel: SemanticModel,
 }
 
@@ -896,10 +897,10 @@ const openDocuments = new Map<string, OpenDocument>()
 /**
  * Called when a document opens or changed.
  */
-const documentDidOpenOrChange = (uri: string, version: number, text: string) => {
+const documentDidOpenOrChange = (uri: string, version: number | null, text: string) => {
   // Prevent overwriting by old version.
   const current = openDocuments.get(uri)
-  if (current && current.version > version) return
+  if (current && (current.version || 0) > (version || 0)) return
 
   // Perform static analysis.
   const semanticModel = analyzeSource(text)
