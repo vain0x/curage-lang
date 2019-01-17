@@ -195,6 +195,10 @@ const rangeToMatrix = (range: Range) => {
   return [positionToArray(range.start), positionToArray(range.end)]
 }
 
+const tokenToArray = (token: Token) => {
+  return [token.type, token.value]
+}
+
 /**
  * Split a source code into a list of tokens.
  */
@@ -414,8 +418,8 @@ export const testParseTokens = () => {
       source: "let x be 1\nlet y be x",
       expected: [
         [
-          ["let", "x", "1"],
-          ["let", "y", "x"],
+          ["let", ["name", "x"], ["int", "1"]],
+          ["let", ["name", "y"], ["name", "x"]],
         ],
         []
       ],
@@ -424,7 +428,7 @@ export const testParseTokens = () => {
       source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
       expected: [
         [
-          ["let", "x", "1"],
+          ["let", ["name", "x"], ["int", "1"]],
         ],
         [
           ["Expected a name.", [[0, 4], [0, 4]]],
@@ -449,7 +453,7 @@ export const testParseTokens = () => {
     const { statements, diagnostics } = parseSource(source)
     const actual = [
       statements.map(s => (
-        [s.type, s.name.value, s.init.value]
+        [s.type, tokenToArray(s.name), tokenToArray(s.init)]
       )),
       diagnostics.map(d => (
         [d.message, rangeToMatrix(d.range)]
