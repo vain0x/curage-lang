@@ -633,6 +633,9 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
   }
 
   for (const statement of statements) {
+    if (statement.type === "error") {
+      continue
+    }
     if (statement.type === "let") {
       const { init, name } = statement
 
@@ -641,9 +644,9 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       if (name.type === "name") {
         defineName(name)
       }
-    } else {
-      throw new Error("NEVER")
+      continue
     }
+    throw new Error("NEVER")
   }
 
   return { statements, symbolDefinitions, diagnostics }
