@@ -143,11 +143,21 @@ interface Token extends TokenBase {
   range: Range,
 }
 
-interface Statement {
+interface ErrorStatement {
+  type: "error",
+  message: string,
+  range: Range,
+}
+
+interface LetStatement {
   type: "let",
   name: Token,
   init: Token,
 }
+
+type Statement =
+  | ErrorStatement
+  | LetStatement
 
 /** Result of parsing. */
 interface SyntaxModel {
@@ -197,6 +207,18 @@ const rangeToMatrix = (range: Range) => {
 
 const tokenToArray = (token: Token) => {
   return [token.type, token.value]
+}
+
+const statementToArray = (statement: Statement) => {
+  if (statement.type == "error") {
+    const { type, message } = statement
+    return [type]
+  }
+  if (statement.type === "let") {
+    const { type, name, init } = statement
+    return [type, tokenToArray(name), tokenToArray(init)]
+  }
+  throw new Error("Never")
 }
 
 /**
@@ -346,6 +368,11 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
       message,
       range,
     })
+    statements.push({
+      type: "error",
+      message,
+      range,
+    })
   }
 
   const isAtomicExpression = (token: Token) => {
@@ -428,7 +455,11 @@ export const testParseTokens = () => {
       source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
       expected: [
         [
+          ["error"],
           ["let", ["name", "x"], ["int", "1"]],
+          ["error"],
+          ["error"],
+          ["error"],
         ],
         [
           ["Expected a name.", [[0, 4], [0, 4]]],
@@ -441,7 +472,9 @@ export const testParseTokens = () => {
     {
       source: "let x = 1;",
       expected: [
-        [],
+        [
+          ["error"],
+        ],
         [
           ["Expected 'be'.", [[0, 6], [0, 10]]],
         ],
@@ -452,9 +485,7 @@ export const testParseTokens = () => {
   for (const { source, expected } of table) {
     const { statements, diagnostics } = parseSource(source)
     const actual = [
-      statements.map(s => (
-        [s.type, tokenToArray(s.name), tokenToArray(s.init)]
-      )),
+      statements.map(statementToArray),
       diagnostics.map(d => (
         [d.message, rangeToMatrix(d.range)]
       ))
