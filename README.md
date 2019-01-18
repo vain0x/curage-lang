@@ -23,7 +23,7 @@ binary-operator = "+" / "-" / "*" / "/" / "%" / "==" / "!=" / "<" / "<=" / ">" /
 
 expression = atomic binary-operator atomic / atomic
 
-statement = "let" name "be" expression eol
+statement = "let" name "=" expression eol
 
 program = statement*
 ```
