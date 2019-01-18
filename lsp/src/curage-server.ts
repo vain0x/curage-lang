@@ -162,21 +162,17 @@ type Expression =
     right: Token,
   }
 
-interface ErrorStatement {
-  type: "error",
-  message: string,
-  range: Range,
-}
-
-interface LetStatement {
-  type: "let",
-  name: Token,
-  init: Expression,
-}
-
 type Statement =
-  | ErrorStatement
-  | LetStatement
+  | {
+    type: "error",
+    message: string,
+    range: Range,
+  }
+  | {
+    type: "let",
+    name: Token,
+    init: Expression,
+  }
 
 /** Result of parsing. */
 interface SyntaxModel {
