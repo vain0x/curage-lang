@@ -19,7 +19,9 @@ eol = "\r\n" / "\n"
 
 atomic = int / name
 
-expression = atomic "+" atomic / atomic
+binary-operator = "+" / "-" / "*" / "/" / "%" / "==" / "!=" / "<" / "<=" / ">" / ">="
+
+expression = atomic binary-operator atomic / atomic
 
 statement = "let" name "be" expression eol
 

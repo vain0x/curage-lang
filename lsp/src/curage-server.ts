@@ -265,7 +265,7 @@ const statementToArray = (statement: Statement) => {
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([+]+)|(.)/g
+  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([-+*\/%=!<]+)|(.)/g
 
   const tokens: Token[] = []
 
@@ -832,9 +832,19 @@ const evaluate = (statements: Statement[]) => {
     }
     if (expression.type === "binary") {
       const { operator, left, right } = expression
-      if (operator.value === "+") {
-        return evaluateToken(left) + evaluateToken(right)
-      }
+      const leftValue = evaluateToken(left)
+      const rightValue = evaluateToken(right)
+      if (operator.value === "+") return leftValue + rightValue
+      if (operator.value === "-") return leftValue - rightValue
+      if (operator.value === "*") return leftValue * rightValue
+      if (operator.value === "/") return leftValue / rightValue
+      if (operator.value === "%") return leftValue % rightValue
+      if (operator.value === "==") return leftValue === rightValue
+      if (operator.value === "!=") return leftValue !== rightValue
+      if (operator.value === "<=") return leftValue <= rightValue
+      if (operator.value === "<") return leftValue < rightValue
+      if (operator.value === ">=") return leftValue >= rightValue
+      if (operator.value === ">") return leftValue > rightValue
       throw fail("Undefined operator", operator.range)
     }
     throw exhaust(expression)
