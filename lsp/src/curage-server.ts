@@ -186,7 +186,7 @@ interface SyntaxModel {
 interface SymbolDefinition {
   type: "var",
   /** The definition-site of the symbol. */
-  definition: Token,
+  definitions: Token[],
   /** Tokens that refers to the symbol. */
   references: Token[],
 }
@@ -589,7 +589,7 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
 
     const definition: SymbolDefinition = {
       type: "var",
-      definition: nameToken,
+      definitions: [nameToken],
       references: [],
     }
 
@@ -672,9 +672,9 @@ export const testAnalyzeStatements = () => {
       source: "let x be 1\nlet y be x\nlet x be y",
       expected: [
         [
-          ["var", "x", [0, 4], [[1, 9]]],
-          ["var", "y", [1, 4], [[2, 9]]],
-          ["var", "x", [2, 4], []],
+          ["var", [[0, 4]], [[1, 9]]],
+          ["var", [[1, 4]], [[2, 9]]],
+          ["var", [[2, 4]], []],
         ],
         [],
       ],
@@ -684,7 +684,7 @@ export const testAnalyzeStatements = () => {
       source: "let x be x",
       expected: [
         [
-          ["var", "x", [0, 4], []],
+          ["var", [[0, 4]], []],
         ],
         [
           ["'x' is not defined.", [0, 9]],
@@ -698,8 +698,7 @@ export const testAnalyzeStatements = () => {
     const actual = [
       symbolDefinitions.map(s => [
         s.type,
-        s.definition.value,
-        positionToArray(s.definition.range.start),
+        s.definitions.map(d => positionToArray(d.range.start)),
         s.references.map(t => positionToArray(t.range.start)),
       ]),
       diagnostics.map(d => [
@@ -720,8 +719,10 @@ const hitTestSymbol = (semanticModel: SemanticModel, position: Position) => {
     && comparePositions(position, range.end) <= 0
 
   for (const symbolDefinition of semanticModel.symbolDefinitions) {
-    if (touch(symbolDefinition.definition.range)) {
-      return { symbolDefinition, token: symbolDefinition.definition }
+    for (const d of symbolDefinition.definitions) {
+      if (touch(d.range)) {
+        return { symbolDefinition, token: d }
+      }
     }
 
     for (const r of symbolDefinition.references) {
@@ -761,7 +762,9 @@ export const testHitTestSymbol = () => {
     for (const [line, character] of positions) {
       const hit = hitTestSymbol(semanticModel, { line, character })
       const symbol = hit && hit.symbolDefinition
-      assert.deepStrictEqual(symbol && symbol.definition.value, expected)
+      const definition = symbol && symbol.definitions[0]
+      const name = definition && definition.value
+      assert.deepStrictEqual(name, expected)
     }
   }
 
@@ -935,12 +938,14 @@ const createHighlights = (uri: string, position: Position) => {
   }
 
   const highlights: DocumentHighlight[] = []
-  const { definition, references } = hit.symbolDefinition
+  const { definitions, references } = hit.symbolDefinition
 
-  highlights.push({
-    kind: DocumentHighlightKind.Write,
-    range: definition.range,
-  })
+  for (const d of definitions) {
+    highlights.push({
+      kind: DocumentHighlightKind.Write,
+      range: d.range,
+    })
+  }
 
   for (const r of references) {
     highlights.push({
@@ -987,12 +992,14 @@ const createRenameEdit = (uri: string, position: Position, newName: string): Wor
   }
 
   const edits: TextEdit[] = []
-  const { definition, references } = hit.symbolDefinition
+  const { definitions, references } = hit.symbolDefinition
 
-  edits.push({
-    range: definition.range,
-    newText: newName,
-  })
+  for (const d of definitions) {
+    edits.push({
+      range: d.range,
+      newText: newName,
+    })
+  }
 
   for (const r of references) {
     edits.push({
