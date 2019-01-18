@@ -127,7 +127,6 @@ type TokenType =
   | "name"
   | "operator"
   | "let"
-  | "be"
   // end-of-line
   | "eol"
   | "invalid"
@@ -308,7 +307,7 @@ export const tokenize = (source: string): Token[] => {
         push({ type: "int", value: int })
         continue
       }
-      if (name === "let" || name === "be") {
+      if (name === "let") {
         push({ type: name, value: name })
         continue
       }
@@ -338,11 +337,11 @@ export const tokenize = (source: string): Token[] => {
 export const testTokenize = () => {
   const table = [
     {
-      source: "let x be 1",
+      source: "let x =  1",
       expected: [
         ["let", "let", [[0, 0], [0, 3]]],
         ["name", "x", [[0, 4], [0, 5]]],
-        ["be", "be", [[0, 6], [0, 8]]],
+        ["operator", "=", [[0, 6], [0, 7]]],
         ["int", "1", [[0, 9], [0, 10]]],
         ["eol", "", [[0, 10], [0, 10]]],
       ],
@@ -472,8 +471,8 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
     i++
 
-    if (tokens[i].type !== "be") {
-      return warn("Expected 'be'.")
+    if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
+      return warn("Expected '='.")
     }
     i++
 
@@ -506,7 +505,7 @@ const parseSource = (source: string) => {
 export const testParseTokens = () => {
   const table = [
     {
-      source: "let x be 1\nlet y be x",
+      source: "let x = 1\nlet y = x",
       expected: [
         [
           ["let", ["name", "x"], ["atomic", ["int", "1"]]],
@@ -516,7 +515,7 @@ export const testParseTokens = () => {
       ],
     },
     {
-      source: "let x be 1 + 2",
+      source: "let x = 1 + 2",
       expected: [
         [
           ["let", ["name", "x"], [
@@ -530,7 +529,7 @@ export const testParseTokens = () => {
       ],
     },
     {
-      source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
+      source: "let \nlet x =  1\n=  2\nlet it =\nlet 0 =  1",
       expected: [
         [
           ["error"],
@@ -542,19 +541,19 @@ export const testParseTokens = () => {
         [
           ["Expected a name.", [[0, 4], [0, 4]]],
           ["Expected 'let'.", [[2, 0], [2, 4]]],
-          ["Expected an expression.", [[3, 9], [3, 9]]],
+          ["Expected an expression.", [[3, 8], [3, 8]]],
           ["Expected a name.", [[4, 4], [4, 10]]],
         ],
       ],
     },
     {
-      source: "let x = 1;",
+      source: "let x be 1;",
       expected: [
         [
           ["error"],
         ],
         [
-          ["Expected 'be'.", [[0, 6], [0, 10]]],
+          ["Expected '='.", [[0, 6], [0, 11]]],
         ],
       ],
     },
@@ -669,7 +668,7 @@ export const testAnalyzeStatements = () => {
   const table = [
     // Shadowing case.
     {
-      source: "let x be 1\nlet y be x\nlet x be y",
+      source: "let x =  1\nlet y =  x\nlet x =  y",
       expected: [
         [
           ["var", [[0, 4]], [[1, 9]]],
@@ -681,7 +680,7 @@ export const testAnalyzeStatements = () => {
     },
     // Use-of-undefined-variable case.
     {
-      source: "let x be x",
+      source: "let x =  x",
       expected: [
         [
           ["var", [[0, 4]], []],
@@ -740,17 +739,17 @@ export const testHitTestSymbol = () => {
 
   const table = [
     {
-      source: "let answer be 42",
+      source: "let answer =  42",
       positions: [[0, 4], [0, 5], [0, 10]],
       expected: "answer",
     },
     {
-      source: "let answer be 42\nlet x be answer\nlet y be answer\n",
+      source: "let answer =  42\nlet x =  answer\nlet y =  answer\n",
       positions: [[1, 9], [2, 15]],
       expected: "answer",
     },
     {
-      source: "let x      be 42\n",
+      source: "let x      =  42\n",
       positions: [[0, 0], [0, 6], [0, 14], [1, 0]],
       expected: undefined,
     }
@@ -772,17 +771,17 @@ export const testHitTestSymbol = () => {
   {
     const table = [
       {
-        source: "let x be 1",
+        source: "let x =  1",
         position: [0, 5],
         expected: [0, 4],
       },
       {
-        source: "let x be 1\nlet y be x",
+        source: "let x =  1\nlet y =  x",
         position: [1, 10],
         expected: [1, 9],
       },
       {
-        source: "let x be 1",
+        source: "let x =  1",
         position: [0, 0],
         expected: undefined,
       },
@@ -877,12 +876,12 @@ const evaluateSource = (source: string) => {
 export const testEvaluate = () => {
   const table = [
     {
-      source: "let x be 1\nlet x be 2\nlet y be x",
+      source: "let x =  1\nlet x =  2\nlet y =  x",
       name: "y",
       expected: 2,
     },
     {
-      source: "let x be 2\nlet y be x + 3",
+      source: "let x =  2\nlet y =  x + 3",
       name: "y",
       expected: 5,
     },
