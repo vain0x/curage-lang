@@ -127,6 +127,8 @@ type TokenType =
   | "name"
   | "operator"
   | "let"
+  | "end"
+  | "if"
   // end-of-line
   | "eol"
   | "invalid"
@@ -171,6 +173,15 @@ type Statement =
     type: "let",
     name: Token,
     init: Expression,
+  }
+  | {
+    type: "end",
+  }
+  | {
+    type: "if",
+    ifToken: Token,
+    condition: Expression,
+    thenClause: Statement[],
   }
 
 /** Result of parsing. */
@@ -244,14 +255,21 @@ const expressionToArray = (expression: Expression) => {
   throw exhaust(expression)
 }
 
-const statementToArray = (statement: Statement) => {
-  if (statement.type == "error") {
-    const { type, message } = statement
-    return [type]
+const statementToArray = (statement: Statement): any[] => {
+  if (statement.type == "error" || statement.type === "end") {
+    return [statement.type]
   }
   if (statement.type === "let") {
     const { type, name, init } = statement
     return [type, tokenToArray(name), expressionToArray(init)]
+  }
+  if (statement.type === "if") {
+    const { type, condition, thenClause } = statement
+    return [
+      type,
+      expressionToArray(condition),
+      thenClause.map(statementToArray),
+    ]
   }
   throw exhaust(statement)
 }
@@ -307,7 +325,7 @@ export const tokenize = (source: string): Token[] => {
         push({ type: "int", value: int })
         continue
       }
-      if (name === "let") {
+      if (name === "let" || name === "end" || name === "if") {
         push({ type: name, value: name })
         continue
       }
@@ -362,7 +380,6 @@ export const testTokenize = () => {
  */
 const parseTokens = (tokens: Token[]): SyntaxModel => {
   const diagnostics: Diagnostic[] = []
-  const statements: Statement[] = []
 
   if (tokens.length === 0) {
     return { statements: [], diagnostics }
@@ -435,7 +452,6 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
 
   /**
    * Parse tokens as an expression.
-   * For now, expression is just an integer or name.
    */
   const parseExpression = (): Expression => {
     if (
@@ -492,18 +508,109 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
   }
 
-  while (i < tokens.length) {
-    hasError = false
+  const parseEndStatement = (): Statement => {
+    const endToken = tokens[i]
+    if (!endToken || endToken.type !== "end") {
+      return errorStatement("Expected 'end'.")
+    }
+    i++
+    return { type: "end" }
+  }
 
-    statements.push(parseLetStatement())
-
-    if (i < tokens.length && tokens[i].type !== "eol") {
+  /**
+   * Check if it's at the end of line and skip over the `eol` token.
+   * Otherwise, report a warning.
+   */
+  const parseEol = (statements: Statement[]) => {
+    if (tokens[i].type !== "eol") {
       statements.push(errorStatement("Expected an end of line."))
     }
     i++
   }
 
-  return { statements, diagnostics }
+  /**
+   * Parse `if` statement and following statements including `end`.
+   */
+  const parseIfBlock = (statements: Statement[]) => {
+    const ifToken = tokens[i]
+    if (ifToken.type !== "if") {
+      throw new Error("Never")
+    }
+    i++
+
+    const condition = parseExpression()
+    parseEol(statements)
+
+    const thenClause = parseClause()
+
+    statements.push({ type: "if", ifToken, condition, thenClause })
+    statements.push(parseEndStatement())
+  }
+
+  const parseBlock = (statements: Statement[]) => {
+    hasError = false
+
+    if (tokens[i].type === "let") {
+      statements.push(parseLetStatement())
+      parseEol(statements)
+      return
+    }
+    if (tokens[i].type === "end") {
+      throw new Error("Never")
+    }
+    if (tokens[i].type === "if") {
+      parseIfBlock(statements)
+      return
+    }
+
+    statements.push(errorStatement("Expected a statement."))
+    parseEol(statements)
+  }
+
+  /**
+   * Parse any number of blocks
+   * until an `end` token or the end of tokens.
+   */
+  const parseClause = (): Statement[] => {
+    const statements: Statement[] = []
+
+    while (i < tokens.length && tokens[i].type !== "end") {
+      parseBlock(statements)
+      if (tokens[i].type === "eol") {
+        i++
+        continue
+      }
+    }
+
+    return statements
+  }
+
+  /**
+   * Parse top-level statements.
+   */
+  const parseTopLevel = (): Statement[] => {
+    const statements: Statement[] = []
+
+    while (i < tokens.length) {
+      if (tokens[i].type === "eol") {
+        i++
+        continue
+      }
+
+      if (tokens[i].type === "end") {
+        statements.push(errorStatement("Unexpected 'end'."))
+        parseEol(statements)
+        continue
+      }
+
+      parseBlock(statements)
+    }
+
+    return statements
+  }
+
+  const topLevel = parseTopLevel()
+  return { statements: topLevel, diagnostics }
 }
 
 const parseSource = (source: string) => {
@@ -548,7 +655,7 @@ export const testParseTokens = () => {
         ],
         [
           ["Expected a name.", [[0, 4], [0, 4]]],
-          ["Expected 'let'.", [[2, 0], [2, 4]]],
+          ["Expected a statement.", [[2, 0], [2, 4]]],
           ["Expected an expression.", [[3, 8], [3, 8]]],
           ["Expected a name.", [[4, 4], [4, 10]]],
         ],
@@ -565,6 +672,30 @@ export const testParseTokens = () => {
         ],
       ],
     },
+    {
+      source: "if false\nlet x = 0\nend",
+      expected: [
+        [
+          ["if", ["atomic", ["name", "false"]], [
+            ["let", ["name", "x"], ["atomic", ["int", "0"]]],
+          ]],
+          ["end"],
+        ],
+        [],
+      ],
+    },
+    {
+      source: "if false\n",
+      expected: [
+        [
+          ["if", ["atomic", ["name", "false"]], []],
+          ["error"],
+        ],
+        [
+          ["Expected 'end'.", [[0, 8], [0, 8]]],
+        ],
+      ],
+    }
   ]
 
   for (const { source, expected } of table) {
@@ -642,9 +773,9 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
     }
   }
 
-  for (const statement of statements) {
+  const analyzeStatement = (statement: Statement): void => {
     if (statement.type === "error") {
-      continue
+      return
     }
     if (statement.type === "let") {
       const { init, name } = statement
@@ -654,11 +785,27 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       if (name.type === "name") {
         defineName(name)
       }
-      continue
+      return
+    }
+    if (statement.type === "end") {
+      return
+    }
+    if (statement.type === "if") {
+      const { condition, thenClause } = statement
+      analyzeExpression(condition)
+      analyzeStatements(thenClause)
+      return
     }
     throw exhaust(statement)
   }
 
+  const analyzeStatements = (statements: Statement[]): void => {
+    for (const statement of statements) {
+      analyzeStatement(statement)
+    }
+  }
+
+  analyzeStatements(statements)
   return { statements, symbolDefinitions, diagnostics }
 }
 
@@ -864,6 +1011,20 @@ const evaluate = (statements: Statement[]) => {
     if (statement.type === "let") {
       const value = evaluateExpression(statement.init)
       env.set(statement.name.value, value)
+      return
+    }
+    if (statement.type === "end") {
+      return
+    }
+    if (statement.type === "if") {
+      const { condition, thenClause } = statement
+      const conditionValue = evaluateExpression(condition)
+      if (conditionValue !== false) {
+        for (const statement of thenClause) {
+          evaluateStatement(statement)
+        }
+      }
+      // FIXME: Remove local variables defined in the then-clause from `env` here.
       return
     }
     throw exhaust(statement)

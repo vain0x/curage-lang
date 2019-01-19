@@ -25,7 +25,11 @@ expression = atomic binary-operator atomic / atomic
 
 statement = "let" name "=" expression eol
 
-program = statement*
+block =
+    "if" expression eol block* "end" eol
+    / statement
+
+program = block*
 ```
 
 Legends:
