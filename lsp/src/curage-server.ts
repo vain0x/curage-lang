@@ -384,13 +384,16 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     if (l >= tokens.length) {
       return { range: tokens[tokens.length - 1].range }
     }
+    if (tokens[i].type === "eol") {
+      return { range: tokens[i].range }
+    }
 
     // Exclusive end of the skipped range.
     let r = l + 1
-    while (r < tokens.length && tokens[r - 1].type !== "eol") {
+    while (r < tokens.length && tokens[r].type !== "eol") {
       r++
     }
-    assert.ok(l < r && (r >= tokens.length || tokens[r - 1].type === "eol"))
+    assert.ok(l < r && (r >= tokens.length || tokens[r].type === "eol"))
 
     const range = {
       start: tokens[l].range.start,
@@ -402,24 +405,28 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
   }
 
   /**
-   * Skip over the current line and report a warning on it.
+   * Report a warning.
+   * Don't report warnings more than once per line.
    */
-  const warn = (message: string) => {
-    // Don't report warnings more than once per line.
+  const warn = (message: string, range: Range) => {
     if (hasError) return
     hasError = true
 
-    const { range } = skipLine()
     diagnostics.push({
       severity: DiagnosticSeverity.Warning,
       message,
       range,
     })
-    statements.push({
-      type: "error",
-      message,
-      range,
-    })
+  }
+
+  /**
+   * Skip over the current line
+   * and create a statement that represents an error.
+   */
+  const errorStatement = (message: string): Statement => {
+    const { range } = skipLine()
+    warn(message, range)
+    return { type: "error", message, range }
   }
 
   const isAtomicExpression = (token: Token) => {
@@ -451,7 +458,7 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
         message: "Expected an expression.",
         range: token.range,
       }
-      warn(e.message)
+      warn(e.message, e.range)
       return e
     }
     i++
@@ -459,40 +466,41 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     return { type: "atomic", token }
   }
 
-  const parseLetStatement = (): void => {
+  const parseLetStatement = (): Statement => {
     if (tokens[i].type !== "let") {
-      return warn("Expected 'let'.")
+      return errorStatement("Expected 'let'.")
     }
     i++
 
     const nameToken = tokens[i]
     if (nameToken.type !== "name") {
-      return warn("Expected a name.")
+      return errorStatement("Expected a name.")
     }
     i++
 
     if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
-      return warn("Expected '='.")
+      return errorStatement("Expected '='.")
     }
     i++
 
     const initExpression = parseExpression()
 
-    if (tokens[i].type !== "eol") {
-      return warn("Expected an end of line.")
-    }
-    i++
-
-    statements.push({
+    return {
       type: "let",
       name: nameToken,
       init: initExpression,
-    })
+    }
   }
 
   while (i < tokens.length) {
     hasError = false
-    parseLetStatement()
+
+    statements.push(parseLetStatement())
+
+    if (i < tokens.length && tokens[i].type !== "eol") {
+      statements.push(errorStatement("Expected an end of line."))
+    }
+    i++
   }
 
   return { statements, diagnostics }
@@ -535,7 +543,7 @@ export const testParseTokens = () => {
           ["error"],
           ["let", ["name", "x"], ["atomic", ["int", "1"]]],
           ["error"],
-          ["error"],
+          ["let", ["name", "it"], ["error"]],
           ["error"],
         ],
         [
