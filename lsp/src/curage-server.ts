@@ -1402,6 +1402,34 @@ const createRenameEdit = (uri: string, position: Position, newName: string): Wor
   return { documentChanges }
 }
 
-export const main = () => {
+export const cliMain = () => {
+  let buffer = ""
+  process.stdin.on("readable", () => {
+    while (true) {
+      const chunk = process.stdin.read()
+      if (chunk === null) {
+        break
+      }
+
+      buffer += chunk.toString()
+    }
+  })
+
+  const main = () => {
+    const words = []
+    for (const line of buffer.split("\n")) {
+      for (const word of line.split(" ")) {
+        if (word === "") continue
+        words.push(word)
+      }
+    }
+
+    console.log(words, buffer)
+  }
+
+  setTimeout(main, 100)
+}
+
+export const serverMain = () => {
   listenToLSPClient()
 }

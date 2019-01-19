@@ -1,5 +1,5 @@
 // Entry point of the server.
 
-import { main } from "./curage-server"
+import { serverMain } from "./curage-server"
 
-main()
+serverMain()
