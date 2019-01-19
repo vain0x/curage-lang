@@ -127,6 +127,7 @@ type TokenType =
   | "name"
   | "operator"
   | "let"
+  | "set"
   | "end"
   | "if"
   // end-of-line
@@ -173,6 +174,11 @@ type Statement =
     type: "let",
     name: Token,
     init: Expression,
+  }
+  | {
+    type: "set",
+    left: Token,
+    right: Expression,
   }
   | {
     type: "end",
@@ -263,6 +269,10 @@ const statementToArray = (statement: Statement): any[] => {
     const { type, name, init } = statement
     return [type, tokenToArray(name), expressionToArray(init)]
   }
+  if (statement.type === "set") {
+    const { type, left, right } = statement
+    return [type, tokenToArray(left), expressionToArray(right)]
+  }
   if (statement.type === "if") {
     const { type, condition, thenClause } = statement
     return [
@@ -325,7 +335,7 @@ export const tokenize = (source: string): Token[] => {
         push({ type: "int", value: int })
         continue
       }
-      if (name === "let" || name === "end" || name === "if") {
+      if (name === "let" || name === "set" || name === "end" || name === "if") {
         push({ type: name, value: name })
         continue
       }
@@ -508,6 +518,28 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
   }
 
+  const parseSetStatement = (): Statement => {
+    if (tokens[i].type !== "set") {
+      return errorStatement("Expected 'set'.")
+    }
+    i++
+
+    const left = tokens[i]
+    if (left.type !== "name") {
+      return errorStatement("Expected a name.")
+    }
+    i++
+
+    if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
+      return errorStatement("Expected '='.")
+    }
+    i++
+
+    const right = parseExpression()
+
+    return { type: "set", left, right }
+  }
+
   const parseEndStatement = (): Statement => {
     const endToken = tokens[i]
     if (!endToken || endToken.type !== "end") {
@@ -552,6 +584,11 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
 
     if (tokens[i].type === "let") {
       statements.push(parseLetStatement())
+      parseEol(statements)
+      return
+    }
+    if (tokens[i].type === "set") {
+      statements.push(parseSetStatement())
       parseEol(statements)
       return
     }
@@ -787,6 +824,12 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       }
       return
     }
+    if (statement.type === "set") {
+      const { left, right } = statement
+      analyzeToken(left)
+      analyzeExpression(right)
+      return
+    }
     if (statement.type === "end") {
       return
     }
@@ -1013,6 +1056,12 @@ const evaluate = (statements: Statement[]) => {
       env.set(statement.name.value, value)
       return
     }
+    if (statement.type === "set") {
+      const { left, right } = statement
+      const value = evaluateExpression(right)
+      env.set(left.value, value)
+      return
+    }
     if (statement.type === "end") {
       return
     }
@@ -1053,6 +1102,11 @@ export const testEvaluate = () => {
       source: "let x =  2\nlet y =  x + 3",
       name: "y",
       expected: 5,
+    },
+    {
+      source: "let x = 1\nset x = 2",
+      name: "x",
+      expected: 2,
     },
   ]
   for (const { source, name, expected } of table) {
