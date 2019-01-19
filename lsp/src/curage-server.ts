@@ -1011,7 +1011,7 @@ const evaluate = (statements: Statement[]) => {
     }
     if (token.type === "name") {
       const value = env.get(token.value)
-      if (!value) {
+      if (value === undefined) {
         throw fail(`Undefined variable ${token.value}`, token.range)
       }
       return value
