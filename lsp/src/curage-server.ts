@@ -185,7 +185,7 @@ type Statement =
   }
   | {
     type: "set",
-    left: Token,
+    left: Expression,
     right: Expression,
   }
   | {
@@ -292,7 +292,7 @@ const statementToArray = (statement: Statement): any[] => {
   }
   if (statement.type === "set") {
     const { type, left, right } = statement
-    return [type, tokenToArray(left), expressionToArray(right)]
+    return [type, expressionToArray(left), expressionToArray(right)]
   }
   if (statement.type === "if") {
     const { type, condition, thenClause } = statement
@@ -495,23 +495,7 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     return token.type === "int" || token.type === "name"
   }
 
-  /**
-   * Parse tokens as an expression.
-   */
-  const parseExpression = (): Expression => {
-    if (
-      i + 2 < tokens.length
-      && isAtomicExpression(tokens[i])
-      && tokens[i + 1].type === "operator"
-      && isAtomicExpression(tokens[i + 2])
-    ) {
-      const left = tokens[i]
-      const operator = tokens[i + 1]
-      const right = tokens[i + 2]
-      i += 3
-      return { type: "binary", operator, left, right }
-    }
-
+  const parseCallExpression = (): Expression => {
     if (
       i + 1 < tokens.length
       && isAtomicExpression(tokens[i])
@@ -555,6 +539,25 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     return { type: "atomic", token }
   }
 
+  /**
+   * Parse tokens as an expression.
+   */
+  const parseExpression = (): Expression => {
+    if (
+      i + 2 < tokens.length
+      && isAtomicExpression(tokens[i])
+      && tokens[i + 1].type === "operator"
+      && isAtomicExpression(tokens[i + 2])
+    ) {
+      const left = tokens[i]
+      const operator = tokens[i + 1]
+      const right = tokens[i + 2]
+      i += 3
+      return { type: "binary", operator, left, right }
+    }
+    return parseCallExpression()
+  }
+
   const parseLetStatement = (): Statement => {
     if (tokens[i].type !== "let") {
       return errorStatement("Expected 'let'.")
@@ -587,11 +590,7 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
     i++
 
-    const left = tokens[i]
-    if (left.type !== "name") {
-      return errorStatement("Expected a name.")
-    }
-    i++
+    const left = parseCallExpression()
 
     if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
       return errorStatement("Expected '='.")
@@ -921,7 +920,7 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
     }
     if (statement.type === "set") {
       const { left, right } = statement
-      analyzeToken(left)
+      analyzeExpression(left)
       analyzeExpression(right)
       return
     }
@@ -1102,6 +1101,13 @@ const evaluate = (statements: Statement[]) => {
   const env = new Map<string, any>()
 
   env.set("to_string", (value: any) => `${value}`)
+  env.set("array", (length: number) => {
+    const a = []
+    for (let i = 0; i < length; i++) {
+      a.push([])
+    }
+    return a
+  })
 
   const fail = (message: string, range: Range): never => {
     const { line, character } = range.start
@@ -1133,6 +1139,9 @@ const evaluate = (statements: Statement[]) => {
       const { callee, arg } = expression
       const calleeValue = evaluateToken(callee)
       const argValue = arg ? evaluateToken(arg) : undefined
+      if (calleeValue instanceof Array) {
+        return calleeValue[argValue]
+      }
       return calleeValue(argValue)
     }
     if (expression.type === "binary") {
@@ -1168,8 +1177,27 @@ const evaluate = (statements: Statement[]) => {
     if (statement.type === "set") {
       const { left, right } = statement
       const value = evaluateExpression(right)
-      env.set(left.value, value)
-      return
+      if (left.type === "error") {
+        throw fail(left.message, left.range)
+      }
+      if (left.type === "atomic") {
+        if (left.token.type !== "name") throw new Error("Never")
+        env.set(left.token.value, value)
+        return
+      }
+      if (left.type === "binary") {
+        throw fail("Expected a name or array element.", left.left.range)
+      }
+      if (left.type === "call") {
+        if (left.arg === undefined) {
+          throw fail("Expected array(index) syntax.", left.callee.range)
+        }
+        const array = evaluateToken(left.callee)
+        const index = evaluateToken(left.arg)
+        array[index] = value
+        return
+      }
+      throw exhaust(left)
     }
     if (statement.type === "end") {
       return
@@ -1240,6 +1268,11 @@ export const testEvaluate = () => {
       source: "let x = to_string(42)",
       name: "x",
       expected: "42",
+    },
+    {
+      source: "let x = array(1)\nset x(0) = 0\nlet y = x(0)",
+      name: "x",
+      expected: [0],
     },
   ]
   for (const { source, name, expected } of table) {
