@@ -126,6 +126,8 @@ type TokenType =
   | "int"
   | "name"
   | "operator"
+  | "("
+  | ")"
   | "let"
   | "set"
   | "end"
@@ -157,6 +159,11 @@ type Expression =
   | {
     type: "atomic",
     token: Token,
+  }
+  | {
+    type: "call",
+    callee: Token,
+    arg?: Token,
   }
   | {
     type: "binary",
@@ -260,6 +267,14 @@ const expressionToArray = (expression: Expression) => {
     const { type, token } = expression
     return [type, tokenToArray(token)]
   }
+  if (expression.type === "call") {
+    const { type, callee, arg } = expression
+    const array = [type, tokenToArray(callee)]
+    if (arg) {
+      array.push(tokenToArray(arg))
+    }
+    return array
+  }
   if (expression.type === "binary") {
     const { type, operator, left, right } = expression
     return [type, tokenToArray(operator), tokenToArray(left), tokenToArray(right)]
@@ -302,7 +317,7 @@ const statementToArray = (statement: Statement): any[] => {
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([-+*\/%=!<]+)|(.)/g
+  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([()])|([-+*\/%=!<]+)|(.)/g
 
   const tokens: Token[] = []
 
@@ -338,6 +353,7 @@ export const tokenize = (source: string): Token[] => {
         space,
         int,
         name,
+        paren,
         operator,
         invalid,
       ] = match
@@ -356,6 +372,10 @@ export const tokenize = (source: string): Token[] => {
       }
       if (name) {
         push({ type: "name", value: name })
+        continue
+      }
+      if (paren) {
+        push({ type: paren as TokenType, value: paren })
         continue
       }
       if (operator) {
@@ -490,6 +510,34 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
       const right = tokens[i + 2]
       i += 3
       return { type: "binary", operator, left, right }
+    }
+
+    if (
+      i + 1 < tokens.length
+      && isAtomicExpression(tokens[i])
+      && tokens[i + 1].type === "("
+    ) {
+      const callee = tokens[i]
+      i += 2
+
+      let arg = undefined
+      if (isAtomicExpression(tokens[i])) {
+        arg = tokens[i]
+        i++
+      }
+
+      if (tokens[i].type !== ")") {
+        const e: Expression = {
+          type: "error",
+          message: "Expected ')'.",
+          range: tokens[i].range,
+        }
+        warn(e.message, e.range)
+        return e
+      }
+      i++
+
+      return { type: "call", callee, arg }
     }
 
     const token = tokens[i]
@@ -744,6 +792,19 @@ export const testParseTokens = () => {
       ],
     },
     {
+      source: "let x = f()\nlet _ = g(x)\nlet _ = h(",
+      expected: [
+        [
+          ["let", ["name", "x"], ["call", ["name", "f"]]],
+          ["let", ["name", "_"], ["call", ["name", "g"], ["name", "x"]]],
+          ["let", ["name", "_"], ["error"]],
+        ],
+        [
+          ["Expected ')'.", [[2, 10], [2, 10]]],
+        ],
+      ],
+    },
+    {
       source: "if false\nlet x = 0\nend",
       expected: [
         [
@@ -766,7 +827,7 @@ export const testParseTokens = () => {
           ["Expected 'end'.", [[0, 8], [0, 8]]],
         ],
       ],
-    }
+    },
   ]
 
   for (const { source, expected } of table) {
@@ -1040,6 +1101,8 @@ const evaluate = (statements: Statement[]) => {
   /** Map from variable names to values. */
   const env = new Map<string, any>()
 
+  env.set("to_string", (value: any) => `${value}`)
+
   const fail = (message: string, range: Range): never => {
     const { line, character } = range.start
     throw new Error(`Error: ${message} at line ${1 + line} column ${1 + character}`)
@@ -1065,6 +1128,12 @@ const evaluate = (statements: Statement[]) => {
     }
     if (expression.type === "atomic") {
       return evaluateToken(expression.token)
+    }
+    if (expression.type === "call") {
+      const { callee, arg } = expression
+      const calleeValue = evaluateToken(callee)
+      const argValue = arg ? evaluateToken(arg) : undefined
+      return calleeValue(argValue)
     }
     if (expression.type === "binary") {
       const { operator, left, right } = expression
@@ -1166,7 +1235,12 @@ export const testEvaluate = () => {
       `,
       name: "i",
       expected: 10,
-    }
+    },
+    {
+      source: "let x = to_string(42)",
+      name: "x",
+      expected: "42",
+    },
   ]
   for (const { source, name, expected } of table) {
     const env = evaluateSource(source)

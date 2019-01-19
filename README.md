@@ -21,7 +21,7 @@ atomic = int / name
 
 binary-operator = "+" / "-" / "*" / "/" / "%" / "==" / "!=" / "<" / "<=" / ">" / ">="
 
-expression = atomic binary-operator atomic / atomic
+expression = atomic binary-operator atomic / atomic "(" atomic? ")" / atomic
 
 statement = "let" name "=" expression eol
 
@@ -36,6 +36,7 @@ Legends:
 
 - `A*` means a sequence of A or empty,
 - `A+` means a sequence of A at least one,
+- `A?` means an A or empty,
 - `A / B` means A or B.
 
 Example:
