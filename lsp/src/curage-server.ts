@@ -130,6 +130,7 @@ type TokenType =
   | "set"
   | "end"
   | "if"
+  | "while"
   // end-of-line
   | "eol"
   | "invalid"
@@ -188,6 +189,11 @@ type Statement =
     ifToken: Token,
     condition: Expression,
     thenClause: Statement[],
+  }
+  | {
+    type: "while",
+    condition: Expression,
+    body: Statement[],
   }
 
 /** Result of parsing. */
@@ -281,6 +287,14 @@ const statementToArray = (statement: Statement): any[] => {
       thenClause.map(statementToArray),
     ]
   }
+  if (statement.type === "while") {
+    const { type, condition, body } = statement
+    return [
+      type,
+      expressionToArray(condition),
+      body.map(statementToArray),
+    ]
+  }
   throw exhaust(statement)
 }
 
@@ -335,7 +349,8 @@ export const tokenize = (source: string): Token[] => {
         push({ type: "int", value: int })
         continue
       }
-      if (name === "let" || name === "set" || name === "end" || name === "if") {
+      if (name === "let" || name === "set" || name === "end"
+        || name === "if" || name === "while") {
         push({ type: name, value: name })
         continue
       }
@@ -579,6 +594,21 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     statements.push(parseEndStatement())
   }
 
+  const parseWhileBlock = (statements: Statement[]) => {
+    if (tokens[i].type !== "while") {
+      throw new Error("Never")
+    }
+    i++
+
+    const condition = parseExpression()
+    parseEol(statements)
+
+    const body = parseClause()
+
+    statements.push({ type: "while", condition, body })
+    statements.push(parseEndStatement())
+  }
+
   const parseBlock = (statements: Statement[]) => {
     hasError = false
 
@@ -597,6 +627,10 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     }
     if (tokens[i].type === "if") {
       parseIfBlock(statements)
+      return
+    }
+    if (tokens[i].type === "while") {
+      parseWhileBlock(statements)
       return
     }
 
@@ -839,6 +873,12 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       analyzeStatements(thenClause)
       return
     }
+    if (statement.type === "while") {
+      const { condition, body } = statement
+      analyzeExpression(condition)
+      analyzeStatements(body)
+      return
+    }
     throw exhaust(statement)
   }
 
@@ -1076,6 +1116,15 @@ const evaluate = (statements: Statement[]) => {
       // FIXME: Remove local variables defined in the then-clause from `env` here.
       return
     }
+    if (statement.type === "while") {
+      const { condition, body } = statement
+      while (evaluateExpression(condition) !== false) {
+        for (const statement of body) {
+          evaluateStatement(statement)
+        }
+      }
+      return
+    }
     throw exhaust(statement)
   }
 
@@ -1108,6 +1157,16 @@ export const testEvaluate = () => {
       name: "x",
       expected: 2,
     },
+    {
+      source: `
+        let i = 0
+        while i < 10
+          set i = i + 1
+        end
+      `,
+      name: "i",
+      expected: 10,
+    }
   ]
   for (const { source, name, expected } of table) {
     const env = evaluateSource(source)
