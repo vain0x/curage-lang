@@ -1096,9 +1096,9 @@ export const testHitTestSymbol = () => {
 }
 
 /** Evaluate the program and print the last variable. */
-const evaluate = (statements: Statement[]) => {
+const evaluate = (statements: Statement[], primitives: [string, any][] = []) => {
   /** Map from variable names to values. */
-  const env = new Map<string, any>()
+  const env = new Map<string, any>(primitives)
 
   env.set("to_string", (value: any) => `${value}`)
   env.set("array", (length: number) => {
@@ -1416,7 +1416,7 @@ export const cliMain = () => {
   })
 
   const main = () => {
-    const words = []
+    const words: string[] = []
     for (const line of buffer.split("\n")) {
       for (const word of line.split(" ")) {
         if (word === "") continue
@@ -1424,7 +1424,31 @@ export const cliMain = () => {
       }
     }
 
-    console.log(words, buffer)
+    let wordIndex = 0
+    const read = () => words[wordIndex++]
+
+    const source = `
+      let a = read_int()
+      let b = read_int()
+      let c = read_int()
+      let s = read_str()
+
+      let x = a + b
+      let x = x + c
+      let x = to_string(x)
+      let x = x + space
+      let x = x + s
+      let _ = println(x)
+    `
+
+    const { statements } = parseSource(source)
+    evaluate(statements, [
+      ["to_int", (value: any) => +value],
+      ["space", " "],
+      ["read_int", () => +read()],
+      ["read_str", () => read()],
+      ["println", console.log],
+    ])
   }
 
   setTimeout(main, 100)
