@@ -17,26 +17,17 @@ Curage-lang's syntax is very simple. The following describes the syntax in PEG-l
 ```fsharp
 eol = "\r\n" / "\n"
 
-atomic = int / name
+expression = int / name
 
-binary-operator = "+" / "-" / "*" / "/" / "%" / "==" / "!=" / "<" / "<=" / ">" / ">="
+statement = "let" name "be" expression eol
 
-expression = atomic binary-operator atomic / atomic "(" atomic? ")" / atomic
-
-statement = "let" name "=" expression eol
-
-block =
-    "if" expression eol block* "end" eol
-    / statement
-
-program = block*
+program = statement*
 ```
 
 Legends:
 
 - `A*` means a sequence of A or empty,
 - `A+` means a sequence of A at least one,
-- `A?` means an A or empty,
 - `A / B` means A or B.
 
 Example:

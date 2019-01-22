@@ -125,14 +125,8 @@ export const onMessage = (message: Message) => {
 type TokenType =
   | "int"
   | "name"
-  | "operator"
-  | "("
-  | ")"
   | "let"
-  | "set"
-  | "end"
-  | "if"
-  | "while"
+  | "be"
   // end-of-line
   | "eol"
   | "invalid"
@@ -150,58 +144,21 @@ interface Token extends TokenBase {
   range: Range,
 }
 
-type Expression =
-  | {
-    type: "error",
-    message: string,
-    range: Range,
-  }
-  | {
-    type: "atomic",
-    token: Token,
-  }
-  | {
-    type: "call",
-    callee: Token,
-    arg?: Token,
-  }
-  | {
-    type: "binary",
-    operator: Token,
-    left: Token,
-    right: Token,
-  }
+interface ErrorStatement {
+  type: "error",
+  message: string,
+  range: Range,
+}
+
+interface LetStatement {
+  type: "let",
+  name: Token,
+  init: Token,
+}
 
 type Statement =
-  | {
-    type: "error",
-    message: string,
-    range: Range,
-  }
-  | {
-    type: "let",
-    name: Token,
-    init: Expression,
-  }
-  | {
-    type: "set",
-    left: Expression,
-    right: Expression,
-  }
-  | {
-    type: "end",
-  }
-  | {
-    type: "if",
-    ifToken: Token,
-    condition: Expression,
-    thenClause: Statement[],
-  }
-  | {
-    type: "while",
-    condition: Expression,
-    body: Statement[],
-  }
+  | ErrorStatement
+  | LetStatement
 
 /** Result of parsing. */
 interface SyntaxModel {
@@ -215,7 +172,7 @@ interface SyntaxModel {
 interface SymbolDefinition {
   type: "var",
   /** The definition-site of the symbol. */
-  definitions: Token[],
+  definition: Token,
   /** Tokens that refers to the symbol. */
   references: Token[],
 }
@@ -226,12 +183,6 @@ interface SemanticModel {
   symbolDefinitions: SymbolDefinition[],
   diagnostics: Diagnostic[],
 }
-
-/**
- * The TypeScript compiler checks if
- * there is no control flow to call this function.
- */
-const exhaust = (value: never) => value
 
 const comparePositions = (l: Position, r: Position) => {
   if (l.line !== r.line) {
@@ -259,65 +210,23 @@ const tokenToArray = (token: Token) => {
   return [token.type, token.value]
 }
 
-const expressionToArray = (expression: Expression) => {
-  if (expression.type === "error") {
-    return [expression.type]
-  }
-  if (expression.type === "atomic") {
-    const { type, token } = expression
-    return [type, tokenToArray(token)]
-  }
-  if (expression.type === "call") {
-    const { type, callee, arg } = expression
-    const array = [type, tokenToArray(callee)]
-    if (arg) {
-      array.push(tokenToArray(arg))
-    }
-    return array
-  }
-  if (expression.type === "binary") {
-    const { type, operator, left, right } = expression
-    return [type, tokenToArray(operator), tokenToArray(left), tokenToArray(right)]
-  }
-  throw exhaust(expression)
-}
-
-const statementToArray = (statement: Statement): any[] => {
-  if (statement.type == "error" || statement.type === "end") {
-    return [statement.type]
+const statementToArray = (statement: Statement) => {
+  if (statement.type == "error") {
+    const { type, message } = statement
+    return [type]
   }
   if (statement.type === "let") {
     const { type, name, init } = statement
-    return [type, tokenToArray(name), expressionToArray(init)]
+    return [type, tokenToArray(name), tokenToArray(init)]
   }
-  if (statement.type === "set") {
-    const { type, left, right } = statement
-    return [type, expressionToArray(left), expressionToArray(right)]
-  }
-  if (statement.type === "if") {
-    const { type, condition, thenClause } = statement
-    return [
-      type,
-      expressionToArray(condition),
-      thenClause.map(statementToArray),
-    ]
-  }
-  if (statement.type === "while") {
-    const { type, condition, body } = statement
-    return [
-      type,
-      expressionToArray(condition),
-      body.map(statementToArray),
-    ]
-  }
-  throw exhaust(statement)
+  throw new Error("Never")
 }
 
 /**
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|([()])|([-+*\/%=!<]+)|(.)/g
+  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
 
   const tokens: Token[] = []
 
@@ -353,8 +262,6 @@ export const tokenize = (source: string): Token[] => {
         space,
         int,
         name,
-        paren,
-        operator,
         invalid,
       ] = match
 
@@ -365,21 +272,12 @@ export const tokenize = (source: string): Token[] => {
         push({ type: "int", value: int })
         continue
       }
-      if (name === "let" || name === "set" || name === "end"
-        || name === "if" || name === "while") {
+      if (name === "let" || name === "be") {
         push({ type: name, value: name })
         continue
       }
       if (name) {
         push({ type: "name", value: name })
-        continue
-      }
-      if (paren) {
-        push({ type: paren as TokenType, value: paren })
-        continue
-      }
-      if (operator) {
-        push({ type: "operator", value: operator })
         continue
       }
       if (invalid) {
@@ -400,11 +298,11 @@ export const tokenize = (source: string): Token[] => {
 export const testTokenize = () => {
   const table = [
     {
-      source: "let x =  1",
+      source: "let x be 1",
       expected: [
         ["let", "let", [[0, 0], [0, 3]]],
         ["name", "x", [[0, 4], [0, 5]]],
-        ["operator", "=", [[0, 6], [0, 7]]],
+        ["be", "be", [[0, 6], [0, 8]]],
         ["int", "1", [[0, 9], [0, 10]]],
         ["eol", "", [[0, 10], [0, 10]]],
       ],
@@ -425,6 +323,7 @@ export const testTokenize = () => {
  */
 const parseTokens = (tokens: Token[]): SyntaxModel => {
   const diagnostics: Diagnostic[] = []
+  const statements: Statement[] = []
 
   if (tokens.length === 0) {
     return { statements: [], diagnostics }
@@ -432,9 +331,6 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
 
   // Current token index.
   let i = 0
-
-  // Whether the current line has an error.
-  let hasError = false
 
   /**
    * Skip over the current line.
@@ -446,16 +342,13 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
     if (l >= tokens.length) {
       return { range: tokens[tokens.length - 1].range }
     }
-    if (tokens[i].type === "eol") {
-      return { range: tokens[i].range }
-    }
 
     // Exclusive end of the skipped range.
     let r = l + 1
-    while (r < tokens.length && tokens[r].type !== "eol") {
+    while (r < tokens.length && tokens[r - 1].type !== "eol") {
       r++
     }
-    assert.ok(l < r && (r >= tokens.length || tokens[r].type === "eol"))
+    assert.ok(l < r && (r >= tokens.length || tokens[r - 1].type === "eol"))
 
     const range = {
       start: tokens[l].range.start,
@@ -467,268 +360,80 @@ const parseTokens = (tokens: Token[]): SyntaxModel => {
   }
 
   /**
-   * Report a warning.
-   * Don't report warnings more than once per line.
+   * Skip over the current line and report a warning on it.
    */
-  const warn = (message: string, range: Range) => {
-    if (hasError) return
-    hasError = true
-
+  const warn = (message: string) => {
+    const { range } = skipLine()
     diagnostics.push({
       severity: DiagnosticSeverity.Warning,
       message,
       range,
     })
-  }
-
-  /**
-   * Skip over the current line
-   * and create a statement that represents an error.
-   */
-  const errorStatement = (message: string): Statement => {
-    const { range } = skipLine()
-    warn(message, range)
-    return { type: "error", message, range }
+    statements.push({
+      type: "error",
+      message,
+      range,
+    })
   }
 
   const isAtomicExpression = (token: Token) => {
     return token.type === "int" || token.type === "name"
   }
 
-  const parseCallExpression = (): Expression => {
-    if (
-      i + 1 < tokens.length
-      && isAtomicExpression(tokens[i])
-      && tokens[i + 1].type === "("
-    ) {
-      const callee = tokens[i]
-      i += 2
-
-      let arg = undefined
-      if (isAtomicExpression(tokens[i])) {
-        arg = tokens[i]
-        i++
-      }
-
-      if (tokens[i].type !== ")") {
-        const e: Expression = {
-          type: "error",
-          message: "Expected ')'.",
-          range: tokens[i].range,
-        }
-        warn(e.message, e.range)
-        return e
-      }
-      i++
-
-      return { type: "call", callee, arg }
-    }
-
+  /**
+   * Try to parse tokens as an expression.
+   * For now, expression is just an integer or name.
+   */
+  const tryParseExpression = (): Token | undefined => {
     const token = tokens[i]
     if (!isAtomicExpression(token)) {
-      const e: Expression = {
-        type: "error",
-        message: "Expected an expression.",
-        range: token.range,
-      }
-      warn(e.message, e.range)
-      return e
+      return undefined
     }
+
     i++
-
-    return { type: "atomic", token }
+    return token
   }
 
-  /**
-   * Parse tokens as an expression.
-   */
-  const parseExpression = (): Expression => {
-    if (
-      i + 2 < tokens.length
-      && isAtomicExpression(tokens[i])
-      && tokens[i + 1].type === "operator"
-      && isAtomicExpression(tokens[i + 2])
-    ) {
-      const left = tokens[i]
-      const operator = tokens[i + 1]
-      const right = tokens[i + 2]
-      i += 3
-      return { type: "binary", operator, left, right }
-    }
-    return parseCallExpression()
-  }
-
-  const parseLetStatement = (): Statement => {
+  const parseLetStatement = (): void => {
     if (tokens[i].type !== "let") {
-      return errorStatement("Expected 'let'.")
+      return warn("Expected 'let'.")
     }
     i++
 
     const nameToken = tokens[i]
     if (nameToken.type !== "name") {
-      return errorStatement("Expected a name.")
+      return warn("Expected a name.")
     }
     i++
 
-    if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
-      return errorStatement("Expected '='.")
+    if (tokens[i].type !== "be") {
+      return warn("Expected 'be'.")
+
     }
     i++
 
-    const initExpression = parseExpression()
+    const initToken = tryParseExpression()
+    if (!initToken) {
+      return warn("Expected an expression.")
+    }
 
-    return {
+    if (tokens[i].type !== "eol") {
+      return warn("Expected an end of line.")
+    }
+    i++
+
+    statements.push({
       type: "let",
       name: nameToken,
-      init: initExpression,
-    }
+      init: initToken,
+    })
   }
 
-  const parseSetStatement = (): Statement => {
-    if (tokens[i].type !== "set") {
-      return errorStatement("Expected 'set'.")
-    }
-    i++
-
-    const left = parseCallExpression()
-
-    if (!(tokens[i].type === "operator" && tokens[i].value === "=")) {
-      return errorStatement("Expected '='.")
-    }
-    i++
-
-    const right = parseExpression()
-
-    return { type: "set", left, right }
+  while (i < tokens.length) {
+    parseLetStatement()
   }
 
-  const parseEndStatement = (): Statement => {
-    const endToken = tokens[i]
-    if (!endToken || endToken.type !== "end") {
-      return errorStatement("Expected 'end'.")
-    }
-    i++
-    return { type: "end" }
-  }
-
-  /**
-   * Check if it's at the end of line and skip over the `eol` token.
-   * Otherwise, report a warning.
-   */
-  const parseEol = (statements: Statement[]) => {
-    if (tokens[i].type !== "eol") {
-      statements.push(errorStatement("Expected an end of line."))
-    }
-    i++
-  }
-
-  /**
-   * Parse `if` statement and following statements including `end`.
-   */
-  const parseIfBlock = (statements: Statement[]) => {
-    const ifToken = tokens[i]
-    if (ifToken.type !== "if") {
-      throw new Error("Never")
-    }
-    i++
-
-    const condition = parseExpression()
-    parseEol(statements)
-
-    const thenClause = parseClause()
-
-    statements.push({ type: "if", ifToken, condition, thenClause })
-    statements.push(parseEndStatement())
-  }
-
-  const parseWhileBlock = (statements: Statement[]) => {
-    if (tokens[i].type !== "while") {
-      throw new Error("Never")
-    }
-    i++
-
-    const condition = parseExpression()
-    parseEol(statements)
-
-    const body = parseClause()
-
-    statements.push({ type: "while", condition, body })
-    statements.push(parseEndStatement())
-  }
-
-  const parseBlock = (statements: Statement[]) => {
-    hasError = false
-
-    if (tokens[i].type === "let") {
-      statements.push(parseLetStatement())
-      parseEol(statements)
-      return
-    }
-    if (tokens[i].type === "set") {
-      statements.push(parseSetStatement())
-      parseEol(statements)
-      return
-    }
-    if (tokens[i].type === "end") {
-      throw new Error("Never")
-    }
-    if (tokens[i].type === "if") {
-      parseIfBlock(statements)
-      return
-    }
-    if (tokens[i].type === "while") {
-      parseWhileBlock(statements)
-      return
-    }
-
-    statements.push(errorStatement("Expected a statement."))
-    parseEol(statements)
-  }
-
-  /**
-   * Parse any number of blocks
-   * until an `end` token or the end of tokens.
-   */
-  const parseClause = (): Statement[] => {
-    const statements: Statement[] = []
-
-    while (i < tokens.length && tokens[i].type !== "end") {
-      parseBlock(statements)
-      if (tokens[i].type === "eol") {
-        i++
-        continue
-      }
-    }
-
-    return statements
-  }
-
-  /**
-   * Parse top-level statements.
-   */
-  const parseTopLevel = (): Statement[] => {
-    const statements: Statement[] = []
-
-    while (i < tokens.length) {
-      if (tokens[i].type === "eol") {
-        i++
-        continue
-      }
-
-      if (tokens[i].type === "end") {
-        statements.push(errorStatement("Unexpected 'end'."))
-        parseEol(statements)
-        continue
-      }
-
-      parseBlock(statements)
-    }
-
-    return statements
-  }
-
-  const topLevel = parseTopLevel()
-  return { statements: topLevel, diagnostics }
+  return { statements, diagnostics }
 }
 
 const parseSource = (source: string) => {
@@ -738,92 +443,41 @@ const parseSource = (source: string) => {
 export const testParseTokens = () => {
   const table = [
     {
-      source: "let x = 1\nlet y = x",
+      source: "let x be 1\nlet y be x",
       expected: [
         [
-          ["let", ["name", "x"], ["atomic", ["int", "1"]]],
-          ["let", ["name", "y"], ["atomic", ["name", "x"]]],
+          ["let", ["name", "x"], ["int", "1"]],
+          ["let", ["name", "y"], ["name", "x"]],
         ],
         []
       ],
     },
     {
-      source: "let x = 1 + 2",
-      expected: [
-        [
-          ["let", ["name", "x"], [
-            "binary",
-            ["operator", "+"],
-            ["int", "1"],
-            ["int", "2"],
-          ]],
-        ],
-        [],
-      ],
-    },
-    {
-      source: "let \nlet x =  1\n=  2\nlet it =\nlet 0 =  1",
+      source: "let \nlet x be 1\nbe 2\nlet it be\nlet 0 be 1",
       expected: [
         [
           ["error"],
-          ["let", ["name", "x"], ["atomic", ["int", "1"]]],
+          ["let", ["name", "x"], ["int", "1"]],
           ["error"],
-          ["let", ["name", "it"], ["error"]],
+          ["error"],
           ["error"],
         ],
         [
           ["Expected a name.", [[0, 4], [0, 4]]],
-          ["Expected a statement.", [[2, 0], [2, 4]]],
-          ["Expected an expression.", [[3, 8], [3, 8]]],
+          ["Expected 'let'.", [[2, 0], [2, 4]]],
+          ["Expected an expression.", [[3, 9], [3, 9]]],
           ["Expected a name.", [[4, 4], [4, 10]]],
         ],
       ],
     },
     {
-      source: "let x be 1;",
+      source: "let x = 1;",
       expected: [
         [
           ["error"],
         ],
         [
-          ["Expected '='.", [[0, 6], [0, 11]]],
-        ],
-      ],
-    },
-    {
-      source: "let x = f()\nlet _ = g(x)\nlet _ = h(",
-      expected: [
-        [
-          ["let", ["name", "x"], ["call", ["name", "f"]]],
-          ["let", ["name", "_"], ["call", ["name", "g"], ["name", "x"]]],
-          ["let", ["name", "_"], ["error"]],
-        ],
-        [
-          ["Expected ')'.", [[2, 10], [2, 10]]],
-        ],
-      ],
-    },
-    {
-      source: "if false\nlet x = 0\nend",
-      expected: [
-        [
-          ["if", ["atomic", ["name", "false"]], [
-            ["let", ["name", "x"], ["atomic", ["int", "0"]]],
-          ]],
-          ["end"],
-        ],
-        [],
-      ],
-    },
-    {
-      source: "if false\n",
-      expected: [
-        [
-          ["if", ["atomic", ["name", "false"]], []],
-          ["error"],
-        ],
-        [
-          ["Expected 'end'.", [[0, 8], [0, 8]]],
+          ["Expected 'be'.", [[0, 6], [0, 10]]],
         ],
       ],
     },
@@ -858,7 +512,7 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
 
     const definition: SymbolDefinition = {
       type: "var",
-      definitions: [nameToken],
+      definition: nameToken,
       references: [],
     }
 
@@ -887,68 +541,22 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
     symbolDefinition.references.push(nameToken)
   }
 
-  const analyzeToken = (token: Token) => {
-    if (token.type === "name") {
-      referName(token)
-    }
-  }
-
-  const analyzeExpression = (expression: Expression) => {
-    if (expression.type === "atomic") {
-      analyzeToken(expression.token)
-    }
-    if (expression.type === "binary") {
-      const { left, right } = expression
-      analyzeToken(left)
-      analyzeToken(right)
-    }
-  }
-
-  const analyzeStatement = (statement: Statement): void => {
-    if (statement.type === "error") {
-      return
-    }
+  for (const statement of statements) {
     if (statement.type === "let") {
       const { init, name } = statement
 
-      analyzeExpression(init)
+      if (init.type === "name") {
+        referName(init)
+      }
 
       if (name.type === "name") {
         defineName(name)
       }
-      return
-    }
-    if (statement.type === "set") {
-      const { left, right } = statement
-      analyzeExpression(left)
-      analyzeExpression(right)
-      return
-    }
-    if (statement.type === "end") {
-      return
-    }
-    if (statement.type === "if") {
-      const { condition, thenClause } = statement
-      analyzeExpression(condition)
-      analyzeStatements(thenClause)
-      return
-    }
-    if (statement.type === "while") {
-      const { condition, body } = statement
-      analyzeExpression(condition)
-      analyzeStatements(body)
-      return
-    }
-    throw exhaust(statement)
-  }
-
-  const analyzeStatements = (statements: Statement[]): void => {
-    for (const statement of statements) {
-      analyzeStatement(statement)
+    } else {
+      throw new Error("NEVER")
     }
   }
 
-  analyzeStatements(statements)
   return { statements, symbolDefinitions, diagnostics }
 }
 
@@ -966,22 +574,22 @@ export const testAnalyzeStatements = () => {
   const table = [
     // Shadowing case.
     {
-      source: "let x =  1\nlet y =  x\nlet x =  y",
+      source: "let x be 1\nlet y be x\nlet x be y",
       expected: [
         [
-          ["var", [[0, 4]], [[1, 9]]],
-          ["var", [[1, 4]], [[2, 9]]],
-          ["var", [[2, 4]], []],
+          ["var", "x", [0, 4], [[1, 9]]],
+          ["var", "y", [1, 4], [[2, 9]]],
+          ["var", "x", [2, 4], []],
         ],
         [],
       ],
     },
     // Use-of-undefined-variable case.
     {
-      source: "let x =  x",
+      source: "let x be x",
       expected: [
         [
-          ["var", [[0, 4]], []],
+          ["var", "x", [0, 4], []],
         ],
         [
           ["'x' is not defined.", [0, 9]],
@@ -995,7 +603,8 @@ export const testAnalyzeStatements = () => {
     const actual = [
       symbolDefinitions.map(s => [
         s.type,
-        s.definitions.map(d => positionToArray(d.range.start)),
+        s.definition.value,
+        positionToArray(s.definition.range.start),
         s.references.map(t => positionToArray(t.range.start)),
       ]),
       diagnostics.map(d => [
@@ -1016,10 +625,8 @@ const hitTestSymbol = (semanticModel: SemanticModel, position: Position) => {
     && comparePositions(position, range.end) <= 0
 
   for (const symbolDefinition of semanticModel.symbolDefinitions) {
-    for (const d of symbolDefinition.definitions) {
-      if (touch(d.range)) {
-        return { symbolDefinition, token: d }
-      }
+    if (touch(symbolDefinition.definition.range)) {
+      return { symbolDefinition, token: symbolDefinition.definition }
     }
 
     for (const r of symbolDefinition.references) {
@@ -1037,17 +644,17 @@ export const testHitTestSymbol = () => {
 
   const table = [
     {
-      source: "let answer =  42",
+      source: "let answer be 42",
       positions: [[0, 4], [0, 5], [0, 10]],
       expected: "answer",
     },
     {
-      source: "let answer =  42\nlet x =  answer\nlet y =  answer\n",
+      source: "let answer be 42\nlet x be answer\nlet y be answer\n",
       positions: [[1, 9], [2, 15]],
       expected: "answer",
     },
     {
-      source: "let x      =  42\n",
+      source: "let x      be 42\n",
       positions: [[0, 0], [0, 6], [0, 14], [1, 0]],
       expected: undefined,
     }
@@ -1059,9 +666,7 @@ export const testHitTestSymbol = () => {
     for (const [line, character] of positions) {
       const hit = hitTestSymbol(semanticModel, { line, character })
       const symbol = hit && hit.symbolDefinition
-      const definition = symbol && symbol.definitions[0]
-      const name = definition && definition.value
-      assert.deepStrictEqual(name, expected)
+      assert.deepStrictEqual(symbol && symbol.definition.value, expected)
     }
   }
 
@@ -1069,17 +674,17 @@ export const testHitTestSymbol = () => {
   {
     const table = [
       {
-        source: "let x =  1",
+        source: "let x be 1",
         position: [0, 5],
         expected: [0, 4],
       },
       {
-        source: "let x =  1\nlet y =  x",
+        source: "let x be 1\nlet y be x",
         position: [1, 10],
         expected: [1, 9],
       },
       {
-        source: "let x =  1",
+        source: "let x be 1",
         position: [0, 0],
         expected: undefined,
       },
@@ -1100,68 +705,25 @@ const evaluate = (statements: Statement[]) => {
   /** Map from variable names to values. */
   const env = new Map<string, any>()
 
-  env.set("to_string", (value: any) => `${value}`)
-  env.set("array", (length: number) => {
-    const a = []
-    for (let i = 0; i < length; i++) {
-      a.push([])
-    }
-    return a
-  })
-
   const fail = (message: string, range: Range): never => {
     const { line, character } = range.start
     throw new Error(`Error: ${message} at line ${1 + line} column ${1 + character}`)
   }
 
-  const evaluateToken = (token: Token) => {
+  const evaluateExpression = (token: Token) => {
+    if (token.type === "invalid") {
+      throw fail("Invalid character", token.range)
+    }
     if (token.type === "int") {
       return Number.parseInt(token.value, 10)
     }
     if (token.type === "name") {
       const value = env.get(token.value)
-      if (value === undefined) {
+      if (!value) {
         throw fail(`Undefined variable ${token.value}`, token.range)
       }
       return value
     }
-    throw fail("Invalid value", token.range)
-  }
-
-  const evaluateExpression = (expression: Expression) => {
-    if (expression.type === "error") {
-      throw fail(expression.message, expression.range)
-    }
-    if (expression.type === "atomic") {
-      return evaluateToken(expression.token)
-    }
-    if (expression.type === "call") {
-      const { callee, arg } = expression
-      const calleeValue = evaluateToken(callee)
-      const argValue = arg ? evaluateToken(arg) : undefined
-      if (calleeValue instanceof Array) {
-        return calleeValue[argValue]
-      }
-      return calleeValue(argValue)
-    }
-    if (expression.type === "binary") {
-      const { operator, left, right } = expression
-      const leftValue = evaluateToken(left)
-      const rightValue = evaluateToken(right)
-      if (operator.value === "+") return leftValue + rightValue
-      if (operator.value === "-") return leftValue - rightValue
-      if (operator.value === "*") return leftValue * rightValue
-      if (operator.value === "/") return leftValue / rightValue
-      if (operator.value === "%") return leftValue % rightValue
-      if (operator.value === "==") return leftValue === rightValue
-      if (operator.value === "!=") return leftValue !== rightValue
-      if (operator.value === "<=") return leftValue <= rightValue
-      if (operator.value === "<") return leftValue < rightValue
-      if (operator.value === ">=") return leftValue >= rightValue
-      if (operator.value === ">") return leftValue > rightValue
-      throw fail("Undefined operator", operator.range)
-    }
-    throw exhaust(expression)
   }
 
   const evaluateStatement = (statement: Statement) => {
@@ -1174,55 +736,7 @@ const evaluate = (statements: Statement[]) => {
       env.set(statement.name.value, value)
       return
     }
-    if (statement.type === "set") {
-      const { left, right } = statement
-      const value = evaluateExpression(right)
-      if (left.type === "error") {
-        throw fail(left.message, left.range)
-      }
-      if (left.type === "atomic") {
-        if (left.token.type !== "name") throw new Error("Never")
-        env.set(left.token.value, value)
-        return
-      }
-      if (left.type === "binary") {
-        throw fail("Expected a name or array element.", left.left.range)
-      }
-      if (left.type === "call") {
-        if (left.arg === undefined) {
-          throw fail("Expected array(index) syntax.", left.callee.range)
-        }
-        const array = evaluateToken(left.callee)
-        const index = evaluateToken(left.arg)
-        array[index] = value
-        return
-      }
-      throw exhaust(left)
-    }
-    if (statement.type === "end") {
-      return
-    }
-    if (statement.type === "if") {
-      const { condition, thenClause } = statement
-      const conditionValue = evaluateExpression(condition)
-      if (conditionValue !== false) {
-        for (const statement of thenClause) {
-          evaluateStatement(statement)
-        }
-      }
-      // FIXME: Remove local variables defined in the then-clause from `env` here.
-      return
-    }
-    if (statement.type === "while") {
-      const { condition, body } = statement
-      while (evaluateExpression(condition) !== false) {
-        for (const statement of body) {
-          evaluateStatement(statement)
-        }
-      }
-      return
-    }
-    throw exhaust(statement)
+    throw new Error("Never")
   }
 
   for (const statement of statements) {
@@ -1240,39 +754,9 @@ const evaluateSource = (source: string) => {
 export const testEvaluate = () => {
   const table = [
     {
-      source: "let x =  1\nlet x =  2\nlet y =  x",
+      source: "let x be 1\nlet x be 2\nlet y be x",
       name: "y",
       expected: 2,
-    },
-    {
-      source: "let x =  2\nlet y =  x + 3",
-      name: "y",
-      expected: 5,
-    },
-    {
-      source: "let x = 1\nset x = 2",
-      name: "x",
-      expected: 2,
-    },
-    {
-      source: `
-        let i = 0
-        while i < 10
-          set i = i + 1
-        end
-      `,
-      name: "i",
-      expected: 10,
-    },
-    {
-      source: "let x = to_string(42)",
-      name: "x",
-      expected: "42",
-    },
-    {
-      source: "let x = array(1)\nset x(0) = 0\nlet y = x(0)",
-      name: "x",
-      expected: [0],
     },
   ]
   for (const { source, name, expected } of table) {
@@ -1326,14 +810,12 @@ const createHighlights = (uri: string, position: Position) => {
   }
 
   const highlights: DocumentHighlight[] = []
-  const { definitions, references } = hit.symbolDefinition
+  const { definition, references } = hit.symbolDefinition
 
-  for (const d of definitions) {
-    highlights.push({
-      kind: DocumentHighlightKind.Write,
-      range: d.range,
-    })
-  }
+  highlights.push({
+    kind: DocumentHighlightKind.Write,
+    range: definition.range,
+  })
 
   for (const r of references) {
     highlights.push({
@@ -1380,14 +862,12 @@ const createRenameEdit = (uri: string, position: Position, newName: string): Wor
   }
 
   const edits: TextEdit[] = []
-  const { definitions, references } = hit.symbolDefinition
+  const { definition, references } = hit.symbolDefinition
 
-  for (const d of definitions) {
-    edits.push({
-      range: d.range,
-      newText: newName,
-    })
-  }
+  edits.push({
+    range: definition.range,
+    newText: newName,
+  })
 
   for (const r of references) {
     edits.push({
