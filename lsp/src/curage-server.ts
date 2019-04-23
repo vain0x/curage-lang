@@ -20,6 +20,7 @@ import {
   TextEdit,
   InitializeParams,
   TextDocumentEdit,
+  SignatureHelp,
 } from "vscode-languageserver-protocol"
 import {
   listenToLSPClient,
@@ -66,6 +67,9 @@ export const onMessage = (message: Message) => {
               && capabilities.textDocument.rename.prepareSupport
               ? { prepareProvider: true }
               : true,
+          signatureHelpProvider: {
+            triggerCharacters: [" "]
+          },
         },
       } as InitializeResult)
       break
@@ -113,6 +117,39 @@ export const onMessage = (message: Message) => {
       const { textDocument: { uri }, position, newName } = params as RenameParams
       const workspaceEdit = createRenameEdit(uri, position, newName)
       sendResponse(id, workspaceEdit || null)
+      return
+    }
+    case "textDocument/signatureHelp": {
+      const { position } = params as TextDocumentPositionParams
+      if (position.line === 1) {
+        const text =    "function(first, second)"
+        const indexes = "         00000  111111 "
+        const params = ["first", "second"]
+        const i = indexes[position.character]
+        const active = i === "0" || i === "1" ? +i : null
+        sendResponse(id, {
+          activeParameter: active,
+          activeSignature: 0,
+          signatures: [
+            {
+              label: text,
+              documentation: "the function",
+              parameters: [
+                {
+                  label: [9, 14],
+                  documentation: "the first parameter",
+                },
+                {
+                  label: [16, 21],
+                  documentation: "the second parameter",
+                }
+              ]
+            }
+          ]
+        } as SignatureHelp)
+      } else {
+        sendResponse(id, null)
+      }
       return
     }
     default: {
@@ -553,7 +590,7 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
         defineName(name)
       }
     } else {
-      throw new Error("NEVER")
+      // throw new Error("NEVER")
     }
   }
 
