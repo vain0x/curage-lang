@@ -43,6 +43,32 @@ let y be x
 - [v0.4.0](https://github.com/vain0x/curage-lang/tree/v0.4.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.3.0...v0.4.0)): Semantic analysis, hit-testing and symbol highlighting
 - [v0.5.0](https://github.com/vain0x/curage-lang/tree/v0.5.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.4.0...v0.5.0)): Symbol renaming
 
+### v0.2.0
+
+![v0.2.0 Screenshot](./docs/images/screenshot-v0.2.0.png)
+
+### v0.3.0
+
+![v0.3.0 Screenshot](./docs/images/screenshot-v0.3.0.png)
+
+### v0.4.0
+
+![v0.4.0 Screenshot](./docs/images/screenshot-v0.4.0.png)
+
+### v0.5.0
+
+Renaming symbols don't need screenshot.
+
+```
+    let x be 1
+```
+
+↓ (Rename `x` to `new_x`)
+
+```
+    let new_x be 1
+```
+
 ## Articles
 
 I'm writing a series of articles to explain source codes in this repository. Written in Japanese language.
