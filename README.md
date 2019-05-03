@@ -15,11 +15,9 @@ Curage-lang itself is tiny, no-interesting language. I am implementing a LSP ser
 Curage-lang's syntax is very simple. The following describes the syntax in PEG-like notation.
 
 ```fsharp
-eol = "\r\n" / "\n"
-
 expression = int / name
 
-statement = "let" name "be" expression eol
+statement = "let" name "be" expression "\n"
 
 program = statement*
 ```

@@ -226,7 +226,7 @@ const statementToArray = (statement: Statement) => {
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /( +)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
+  const tokenRegexp = /([ \r]+)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
 
   const tokens: Token[] = []
 
@@ -245,7 +245,7 @@ export const tokenize = (source: string): Token[] => {
     tokens.push({ ...token, range })
   }
 
-  const lines = source.split(/\r\n|\n/)
+  const lines = source.split("\n")
   for (line = 0; line < lines.length; line++) {
     // Skip blank line.
     if (lines[line].trim() === "") continue
@@ -443,7 +443,7 @@ const parseSource = (source: string) => {
 export const testParseTokens = () => {
   const table = [
     {
-      source: "let x be 1\nlet y be x",
+      source: "let x be 1\r\nlet y be x",
       expected: [
         [
           ["let", ["name", "x"], ["int", "1"]],
