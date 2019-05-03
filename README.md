@@ -37,11 +37,11 @@ let y be x
 
 ## Tags and Features
 
-- v0.1.0: Minimum implementation of LSP server
-- v0.2.0: Sample of error reporting
-- v0.3.0: Syntactical analysis and syntax error reporting
-- v0.4.0: Semantic analysis, hit-testing and symbol highlighting
-- v0.5.0: Symbol renaming
+- [v0.1.0](https://github.com/vain0x/curage-lang/tree/v0.1.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.0.0...v0.1.0)): Minimum implementation of LSP server
+- [v0.2.0](https://github.com/vain0x/curage-lang/tree/v0.2.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.1.0...v0.2.0)): Sample of error reporting
+- [v0.3.0](https://github.com/vain0x/curage-lang/tree/v0.3.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.2.0...v0.3.0)): Syntactical analysis and syntax error reporting
+- [v0.4.0](https://github.com/vain0x/curage-lang/tree/v0.4.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.3.0...v0.4.0)): Semantic analysis, hit-testing and symbol highlighting
+- [v0.5.0](https://github.com/vain0x/curage-lang/tree/v0.5.0) ([diff](https://github.com/vain0x/curage-lang/compare/v0.4.0...v0.5.0)): Symbol renaming
 
 ## Articles
 
