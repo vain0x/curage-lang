@@ -552,6 +552,8 @@ const analyzeStatements = (statements: Statement[]): SemanticModel => {
       if (name.type === "name") {
         defineName(name)
       }
+    } else if (statement.type === "error") {
+      // Error.
     } else {
       throw new Error("NEVER")
     }
