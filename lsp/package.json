@@ -4,7 +4,7 @@
   "description": "Curage-lang supports.",
   "repository": "https://github.com/vain0x/curage-lang",
   "author": "vain0x",
-  "license": "MIT",
+  "license": "CC0-1.0",
   "private": true,
   "main": "./out/extension",
   "activationEvents": [
