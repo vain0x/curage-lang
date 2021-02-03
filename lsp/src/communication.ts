@@ -2,6 +2,7 @@
 
 import * as assert from "assert"
 import { onMessage } from "./curage-server"
+import { JsonRpcError } from "./error"
 
 const tryParseLSPMessage = (source: string) => {
   const HEADER_LINE_LIMIT = 10
@@ -31,7 +32,6 @@ const tryParseLSPMessage = (source: string) => {
   if (!hasBody) return
 
   if (contentLength === undefined) {
-    // FIXME: Send error in JSONRPC protocol.
     throw new Error("Content-Length is required.")
   }
 
@@ -45,9 +45,8 @@ const tryParseLSPMessage = (source: string) => {
   let message: any
   try {
     message = JSON.parse(body)
-  } catch (_err) {
-    // FIXME: Send error in JSONRPC protocol.
-    throw new Error("Invalid JSON.")
+  } catch {
+    throw JsonRpcError.newParseError()
   }
 
   return { message, rest }
@@ -78,6 +77,13 @@ export const testTryParseLSPMessage = () => {
   }
 }
 
+export const testTryParseLSPMessageError = () => {
+  assert.throws(
+    () => tryParseLSPMessage("Content-Length: 1\r\n\r\n!"),
+    err => err instanceof JsonRpcError,
+  )
+}
+
 /**
  * Reads stdin and call `onMessage`
  * whenever a message has come.
@@ -96,7 +102,11 @@ export const listenToLSPClient = () => {
     const { message, rest } = result
     buffer = rest
 
-    onMessage(message)
+    try {
+      onMessage(message)
+    } catch (err) {
+      sendError(err, message)
+    }
   }
 
   process.stdin.on("data", (data: Buffer) => {
@@ -129,4 +139,19 @@ export const sendResponse = (id: number, result: any) => {
 
 export const sendNotify = (method: string, params: any) => {
   sendLSPMessage({ method, params })
+}
+
+const sendError = (err: any, message: any) => {
+  if (!(err instanceof JsonRpcError)) {
+    console.error("ERROR:", err)
+    err = JsonRpcError.newInternalError()
+  }
+
+  sendLSPMessage({
+    id: message?.id ?? null,
+    error: {
+      code: err.code,
+      message: err.message,
+    },
+  })
 }

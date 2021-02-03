@@ -1,6 +1,6 @@
 // Entry point of the test codes.
 
-import { testTryParseLSPMessage } from "./communication"
+import { testTryParseLSPMessage, testTryParseLSPMessageError } from "./communication"
 import {
   testTokenize,
   testParseTokens,
@@ -10,6 +10,7 @@ import {
 } from "./curage-server"
 
 testTryParseLSPMessage()
+testTryParseLSPMessageError()
 testTokenize()
 testParseTokens()
 testAnalyzeStatements()

@@ -26,6 +26,7 @@ import {
   sendNotify,
   sendResponse,
 } from "./communication"
+import { JsonRpcError } from "./error"
 
 interface Message {
   jsonrpc: string,
@@ -115,10 +116,8 @@ export const onMessage = (message: Message) => {
       sendResponse(id, workspaceEdit || null)
       return
     }
-    default: {
-      // Pass.
-      break
-    }
+    default:
+      throw JsonRpcError.newMethodNotFound()
   }
 }
 
