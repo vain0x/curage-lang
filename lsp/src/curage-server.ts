@@ -226,7 +226,7 @@ const statementToArray = (statement: Statement) => {
  * Split a source code into a list of tokens.
  */
 export const tokenize = (source: string): Token[] => {
-  const tokenRegexp = /([ \r]+)|([+-]?[0-9]+\b)|([a-zA-Z0-9_\b]+)|(.)/g
+  const tokenRegexp = /([ \r]+)|([+-]?[0-9]+\b)|([a-zA-Z0-9_]+\b)|(.)/g
 
   const tokens: Token[] = []
 
