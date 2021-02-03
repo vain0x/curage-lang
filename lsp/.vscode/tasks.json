@@ -4,8 +4,8 @@
         {
             "label": "npm",
             "type": "process",
-            "command": "yarn",
-            "args": ["build"],
+            "command": "npm",
+            "args": ["run", "build"],
             "group": {
                 "kind": "build",
                 "isDefault": true

@@ -11,7 +11,7 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-} from "vscode-languageclient"
+} from "vscode-languageclient/lib/node/main"
 
 let client: LanguageClient
 
